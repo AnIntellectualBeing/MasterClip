@@ -3,7 +3,7 @@
 import os
 import subprocess
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 if os.name == "nt":
     # The desktop app has no console, so every FFmpeg / yt-dlp / ffprobe child would pop up its own

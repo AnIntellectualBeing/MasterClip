@@ -137,8 +137,18 @@ def intro_card(source, at: float, output: Path, title: str, subtitle: str, secon
     return output
 
 
+def _reuse_part(clip: Path, part: Path, width: int, height: int, cancel_event=None):
+    """A finished 16:9 clip becomes a join part in seconds: no second cut + caption render."""
+    from .encoders import video_args
+
+    _run([find_tool("ffmpeg"), "-nostdin", "-y", "-i", str(clip),
+          "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1,format=yuv420p",
+          *video_args(20), "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", str(part)], cancel_event,
+         timeout=max(300, int(probe_media(clip).duration * 6)))
+
+
 def make_compilation(source, moments: list[Moment], output, design: Design, title: str,
-                     intro: bool = True, footer: str = "", cancel_event=None, progress=None) -> dict:
+                     intro: bool = True, footer: str = "", cancel_event=None, progress=None, ready=None) -> dict:
     if not moments:
         raise MediaError("Pick at least one moment.")
     if design.aspect != "16:9":
@@ -162,7 +172,11 @@ def make_compilation(source, moments: list[Moment], output, design: Design, titl
             if progress:
                 progress(len(parts) / steps, f"Moment {i + 1} of {len(moments)}")
             part = work / f"{i + 1:02}.mkv"
-            render_clip(source, moment.start, moment.end, part, design, moment.segments, moment.title, cancel_event=cancel_event)
+            done = ready[i] if ready and i < len(ready) else None
+            if done and Path(done).is_file():
+                _reuse_part(Path(done), part, round(W * design.resolution / 1080), int(design.resolution), cancel_event)
+            else:
+                render_clip(source, moment.start, moment.end, part, design, moment.segments, moment.title, cancel_event=cancel_event)
             parts.append(part)
             chapters.append((0.0 if i == 0 else at, moment.title))
             at += probe_media(part).duration

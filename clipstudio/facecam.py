@@ -146,7 +146,11 @@ def refine_to_panel(edges, face, frame_width, frame_height, aspect=16 / 9):
     width, height = right - left, bottom - top
     if width < 1.4 * fw or height < 1.2 * fh or width > frame_width * 0.6 or height > frame_height * 0.7:
         return None
-    return int(left), int(top), int(width), int(height)
+    # Step inside the border: cam frames, follower counters and name tags sit right on the edge.
+    inset_y, inset_x = max(3.0, 0.045 * height), max(3.0, 0.02 * width)
+    left, right = left + inset_x, right - inset_x
+    top, bottom = top + inset_y, bottom - inset_y
+    return int(left), int(top), int(right - left), int(bottom - top)
 
 
 def _detect_faces(detector, frame, frame_width, frame_height):

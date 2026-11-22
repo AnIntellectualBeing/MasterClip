@@ -202,3 +202,30 @@ def test_hourly_schedule_spreads_clips_and_skips_taken_times():
     now = dt.datetime(2026, 11, 22, 6, 30, tzinfo=dt.timezone.utc)  # noon
     times = next_free_slots(settings, ["2026-11-22T12:15"], 3, now)
     assert times == ["2026-11-22T12:30", "2026-11-22T12:45", "2026-11-22T13:00"]
+
+
+def test_compilation_from_my_clips_has_each_moment_once(app_client, monkeypatch):
+    """A moment made vertical + 16:9 is one chapter, built from the finished 16:9 file."""
+    module, _ = app_client
+    clips = []
+    for n, (start, end) in enumerate([(10.0, 40.0), (100.0, 130.0)]):
+        for kind in ("short", "long"):
+            clips.append({"index": len(clips), "moment": n, "kind": kind, "start": start, "end": end,
+                          "title": f"Moment {n}", "file": f"clip-{n}-{kind}.mp4"})
+    job = module.store.create("Both QA", source_path="qa.mp4", duration=200, candidates=[], clips=clips)
+    folder = module.store.folder(job["id"])
+    (folder / "transcript.json").write_text("[]")
+    for c in clips:
+        (folder / c["file"]).write_bytes(b"x")
+    module.events[job["id"]] = threading.Event()
+    seen = {}
+
+    def make_compilation(source, moments, output, *args, ready=None, **kwargs):
+        seen.update(titles=[m.title for m in moments], ready=[p.name if p else None for p in ready])
+        output.write_bytes(b"v")
+        return {"description": "", "duration": 1, "chapters": []}
+
+    monkeypatch.setattr("clipstudio.longform.make_compilation", make_compilation)
+    module.make_long(job["id"], module.LongRequest(kind="compilation", moments="clips", title="QA"))
+    assert seen["titles"] == ["Moment 0", "Moment 1"]
+    assert seen["ready"] == ["clip-0-long.mp4", "clip-1-long.mp4"]

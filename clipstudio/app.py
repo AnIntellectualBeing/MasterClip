@@ -1823,7 +1823,17 @@ def make_long(ident, body: LongRequest):
         candidates = [Candidate(**{k: c[k] for k in ("start", "end", "score", "reasons", "core_start", "core_end") if k in c}) for c in job.get("candidates") or []]
         if body.kind == "compilation":
             if body.moments == "clips" and job.get("clips"):
-                picked = [(c["start"], c["end"], c.get("title") or "", c.get("score", 0)) for c in job["clips"]]
+                # One entry per moment: a moment made as both vertical and 16:9 is two clips, not two chapters.
+                by_moment = {}
+                for c in job["clips"]:
+                    key = (round(float(c["start"]), 2), round(float(c["end"]), 2))
+                    if key not in by_moment or c.get("kind") == "long":
+                        by_moment[key] = c
+                picked = []
+                for c in by_moment.values():
+                    file = folder / str(c.get("file") or "")
+                    ready = file if c.get("kind") == "long" and file.is_file() and body.captions else None
+                    picked.append((c["start"], c["end"], c.get("title") or "", c.get("score", 0), ready))
             else:
                 from .boost import Booster
 
@@ -1835,12 +1845,13 @@ def make_long(ident, body: LongRequest):
                 found, ai_titles, ai_note = boost_pick(job, transcript, shortlist, body.count)
                 if ai_note:
                     store.update(ident, ai_note=ai_note)
-                picked = [(c.start, c.end, ai_titles.get(id(c), ""), c.score) for c in found]
+                picked = [(c.start, c.end, ai_titles.get(id(c), ""), c.score, None) for c in found]
             if not picked:
                 raise RuntimeError("No clear moments found. Try a longer part of the stream.")
             picked.sort(key=(lambda m: m[3]) if body.order == "countdown" else (lambda m: m[0]))
-            moments = []
-            for n, (start, end, own_title, _score) in enumerate(picked):
+            moments, ready_parts = [], []
+            for n, (start, end, own_title, _score, ready) in enumerate(picked):
+                ready_parts.append(ready)
                 segments, text = _clip_words(transcript, start, end)
                 used = {m.title.split(" ", 1)[-1] if body.order == "countdown" else m.title for m in moments}
                 label = own_title or (suggest_titles(text, streamer, avoid=used, context=_title_context(job)) or ["Moment"])[0]
@@ -1849,7 +1860,8 @@ def make_long(ident, body: LongRequest):
                 moments.append(Moment(start, end, label, segments))
             tell(0, "Making the intro")
             result = make_compilation(job["source_path"], moments, folder / name, design, title,
-                                      intro=body.intro, footer=footer, cancel_event=event, progress=tell)
+                                      intro=body.intro, footer=footer, cancel_event=event, progress=tell,
+                                      ready=ready_parts)
         else:
             segments, _ = _clip_words(transcript, 0, job["duration"])
             found = select_shorts(candidates, transcript, job["duration"], length=30, count=12)

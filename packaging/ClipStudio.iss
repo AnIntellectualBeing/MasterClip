@@ -1,6 +1,6 @@
 ; Inno Setup script for Clip Studio. Built by packaging/build.ps1 (it passes /DSourceDir and /DOutDir).
 #define AppName "MasterClip"
-#define AppVersion "1.2.1"
+#define AppVersion "1.3.0"
 #define AppExe "ClipStudio.exe"
 #ifndef SourceDir
   #error Pass /DSourceDir=<PyInstaller "Clip Studio" folder>
@@ -14,7 +14,10 @@ AppId={{6C1E4F2A-3B7D-4C59-9A0E-5D2B8C7F1A30}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-AppPublisher=AnIntellectualBeing
+AppPublisher=An Intellectual Company
+AppPublisherURL=https://anintellectualcompany.com/software/MasterClip-Tool/
+AppSupportURL=https://anintellectualcompany.com/software/MasterClip-Tool/
+AppCopyright=(c) 2026 An Intellectual Company
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes

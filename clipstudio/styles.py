@@ -188,6 +188,21 @@ def rounded_rect(x0: float, y0: float, x1: float, y1: float, r: float) -> str:
     )
 
 
+def _title_over_face(design: Design) -> bool:
+    from .design import cam_output_rect, effective_layout
+
+    if design.aspect == "16:9" or effective_layout(design) not in ("stack", "corner"):
+        return False
+    try:
+        rect = cam_output_rect(design)
+    except Exception:  # noqa: BLE001
+        return False
+    if not rect:
+        return False
+    _, y, _, h = rect
+    return y <= design.title.y <= y + h
+
+
 def title_lines(design: Design, text: str):
     """(lines, em px, centre x, centre y, box or None) for the hook title, laid out like the preview."""
     from .fonts import text_width, wrap
@@ -200,6 +215,16 @@ def title_lines(design: Design, text: str):
     shown = text.upper() if title.style in ("meme", "yellow") else text
     pad = TITLE_PAD * scale if box else 0
     lines = wrap(shown, title.font, em, W * 0.92 - 2 * pad)
+    if len(lines) > 1 and _title_over_face(design):
+        # Keep the streamer's face clear: a long title over the cam shrinks to one line (or a smaller box).
+        for factor in (0.9, 0.8, 0.72, 0.64):
+            fitted = wrap(shown, title.font, em * factor, W * 0.92 - 2 * pad)
+            if len(fitted) == 1:
+                em, lines = em * factor, fitted
+                break
+        else:
+            em = em * 0.8
+            lines = wrap(shown, title.font, em, W * 0.92 - 2 * pad)
     tx, ty = title.x * W, title.y * H
     if design.layout == "meme":
         tx, ty = W / 2, design.meme_bar * H / 2

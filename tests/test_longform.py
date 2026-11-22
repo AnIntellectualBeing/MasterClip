@@ -70,3 +70,21 @@ def test_full_length_keeps_whole_range(tmp_path):
     assert abs(float(info["format"]["duration"]) - 40) < 0.5
     assert int(info["streams"][0]["width"]) == 1920
     assert len(info["chapters"]) == 3 and "0:30 End" in result["description"]
+
+
+@needs_ffmpeg
+def test_compilation_reuses_finished_16x9_clips(tmp_path, monkeypatch):
+    """Owner, 23 Nov: the YouTube video re-rendered every moment (slow). Finished clips are reused."""
+    import clipstudio.longform as lf
+
+    src = _video(tmp_path / "src.mp4")
+    ready = [_video(tmp_path / "a.mp4", seconds=4), _video(tmp_path / "b.mp4", seconds=5)]
+    monkeypatch.setattr(lf, "render_clip", lambda *a, **k: (_ for _ in ()).throw(AssertionError("re-rendered")))
+    design = template_design("big_captions", aspect="16:9", fill="blur", resolution=720)
+    moments = [Moment(0, 4, "One", []), Moment(5, 10, "Two", [])]
+    make_compilation(src, moments, tmp_path / "comp.mp4", design, "Test", ready=ready)
+    info = _probe(tmp_path / "comp.mp4")
+    assert [c["tags"]["title"] for c in info["chapters"]] == ["One", "Two"]
+    assert abs(float(info["format"]["duration"]) - 12) < 0.6  # 3 s intro + 4 + 5
+    video = next(s for s in info["streams"] if s["codec_type"] == "video")
+    assert (video["width"], video["height"]) == (1280, 720)

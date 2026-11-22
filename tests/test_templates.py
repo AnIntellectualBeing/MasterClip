@@ -95,7 +95,9 @@ def test_panel_refine_snaps_to_border_lines():
     edges[295:443, 1002] = 1.0
     edges[295:443, 1272] = 1.0
     box = refine_to_panel(edges, (1060, 350, 70, 90), 1280, 720)
-    assert box == (1002, 295, 270, 147)
+    x, y, w, h = box  # just inside the border (counters / frames sit on the edge)
+    assert 1002 < x <= 1010 and 295 < y <= 303
+    assert 1262 <= x + w < 1272 and 433 <= y + h < 442
 
 
 @pytest.mark.parametrize("template", ["streamer_top", "meme_hook"])

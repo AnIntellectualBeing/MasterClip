@@ -607,7 +607,31 @@ function showWorking(message, p, job) {
     li.classList.toggle("now", n === step);
   });
   const secs = state.started ? Math.round((Date.now() - state.started) / 1000) : 0;
-  $("#workTime").textContent = secs > 3 ? `${clock(secs)} so far` + (step === 3 ? " · each clip takes about a minute" : "") : "";
+  const left = job ? timeLeft(job) : null;
+  $("#workTime").textContent = secs > 3
+    ? `${clock(secs)} so far · ` + (left == null ? "working out the time left…" : left < 45 ? "almost done" : `about ${left < 90 ? "1 min" : Math.round(left / 60) + " min"} left`)
+    : "";
+}
+// Time left from real speed: how fast the current step moves, plus the clips still to make
+// (each measured as they finish; about 40 s until the first one is done).
+function timeLeft(job) {
+  const now = Date.now(), raw = job.progress || 0, s = job.status;
+  const t = state.eta || (state.eta = {});
+  if (t.job !== job.id || t.status !== s) Object.assign(t, { job: job.id, status: s, since: now, raw0: raw, clipAt: now, clips: (job.clips || []).length });
+  const r = job.recipe || {};
+  const per = (r.formats || []).length > 1 || r.kind === "both" ? 2 : 1;
+  const want = Math.max(1, (r.count || 3) * per);
+  const done = (job.clips || []).length;
+  if (done > t.clips) { t.perClip = (now - t.clipAt) / 1000 / (done - t.clips); t.clipAt = now; t.clips = done; }
+  const perClip = t.perClip || 40;
+  const renderLeft = Math.max(0, want - done) * perClip;
+  if (s === "rendering") return renderLeft;
+  const moved = raw - t.raw0, spent = (now - t.since) / 1000;
+  if (s !== "transcribing" || spent < 15 || moved < 0.03) return t.last != null && t.lastStatus === s ? t.last : null;
+  const est = Math.round(spent * (1 - raw) / moved + renderLeft + 20);
+  t.last = t.last == null ? est : Math.round(0.7 * t.last + 0.3 * est);
+  t.lastStatus = s;
+  return t.last;
 }
 function paintWorkClips(job) {
   // Clips show up here as soon as each one is made, before the rest are done.
