@@ -41,7 +41,8 @@ with tempfile.TemporaryDirectory(prefix="masterclip-package-") as temp:
             time.sleep(0.2)
         assert base, log.read_text(errors="replace") if log.exists() else "No startup log"
         health = requests.get(base + "/api/health", timeout=10).json()
-        assert health["version"] == "1.1.0", health
+        from clipstudio import __version__
+        assert health["version"] == __version__, health
         assert health["ffmpeg"] and health["ffprobe"] and health["speech"]
         assert requests.get(base + "/api/speech-model").json()["state"] == "bundled"
         assert requests.get(base + "/api/post/status").json()["ready"] is False
