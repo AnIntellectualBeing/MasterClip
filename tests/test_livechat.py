@@ -149,10 +149,10 @@ def live_app(tmp_path, monkeypatch):
     return module
 
 
-def run_capture(module, monkeypatch, tmp_path, *, spikes=(), clip_now_at=None, stop_at=700):
+def run_capture(module, monkeypatch, tmp_path, *, spikes=(), clip_now_at=None, stop_at=700, window=300):
     clock = {"t": 0.0}
     job = module.store.create("Live stream", source_path=None, options={}, recipe={"count": 3, "length": 30},
-                              live=dict(state="starting", recorded=0, windows=0, window=300))
+                              live=dict(state="starting", recorded=0, windows=0, window=window))
     ident = job["id"]
     module.events[ident] = threading.Event()
     module.live_stops[ident] = threading.Event()
@@ -187,6 +187,13 @@ def test_capture_without_spikes_clips_every_window(live_app, monkeypatch, tmp_pa
     assert all(w["count"] is None and not w["clip_now"] for w in windows)
     assert windows[0]["chat"] == [(1.0, "chat 0-300")]
     assert job["live"]["hype"] == 40 and job["live"]["chat"] == "reading"
+
+
+def test_minute_scans_keep_running_beyond_the_requested_clip_count(live_app, monkeypatch, tmp_path):
+    windows, job = run_capture(live_app, monkeypatch, tmp_path, stop_at=330, window=60)
+    assert len(windows) >= 5  # count=3 never ends the live session
+    assert windows[0]["end"] == 60
+    assert windows[4]["end"] == 300
 
 
 def test_chat_spike_closes_the_stretch_early(live_app, monkeypatch, tmp_path):

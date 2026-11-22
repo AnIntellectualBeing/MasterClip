@@ -14,6 +14,8 @@ import shutil
 import subprocess
 import threading
 import uuid
+import math
+import time
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -38,13 +40,17 @@ DEFAULTS = {
     "extra": [],
     "rotate": False,
     "rr": 0,
+    "short_platforms": ["instagram", "youtube"],
+    "long_youtube": True,
+    "cadence": "hourly",
+    "clips_per_hour": 6,
 }
 MAX_KEYS = 30
 
 
 def key_name(slot: int) -> str:
     return KEY_NAME if int(slot or 1) <= 1 else f"{KEY_NAME}_{int(slot)}"
-OPEN = ("waiting", "uploading")
+OPEN = ("waiting", "uploading", "retrying", "cancelling")
 NAMES = {"instagram": "Instagram", "youtube": "YouTube"}
 LIVE = ("scheduled", "publishing")
 
@@ -77,6 +83,10 @@ def clean_settings(data: dict) -> dict:
     s["caption"] = str(s["caption"])[:2000]
     s["hashtags"] = str(s["hashtags"])[:500]
     s["accounts"] = {p: (s["accounts"].get(p) or None) for p in PLATFORMS}
+    s["short_platforms"] = [p for p in PLATFORMS if p in (s.get("short_platforms") or [])]
+    s["long_youtube"] = bool(s.get("long_youtube", True))
+    s["cadence"] = "daily" if s.get("cadence") == "daily" else "hourly"
+    s["clips_per_hour"] = max(1, min(60, int(s.get("clips_per_hour") or 6)))
     extra = []
     for e in s.get("extra") or []:
         try:
@@ -102,6 +112,9 @@ def clean_settings(data: dict) -> dict:
 
 
 def day_slots(settings: dict) -> list[dt.time]:
+    if settings.get("cadence") == "hourly":
+        minutes = sorted({math.floor(i * 60 / settings["clips_per_hour"]) for i in range(settings["clips_per_hour"])})
+        return [dt.time(hour, minute) for hour in range(24) for minute in minutes]
     chosen = settings["slots"][: settings["per_day"]]
     return sorted(dt.time(*map(int, slot.split(":"))) for slot in chosen)
 
@@ -171,6 +184,7 @@ class Poster:
         self.wake = threading.Event()
         self.client_factory = client_factory or (lambda key: Zernio(key))
         self.worker: threading.Thread | None = None
+        self.send_lock = threading.Lock()
 
     # ---- storage ----
     def _read(self, name, default):
@@ -278,7 +292,31 @@ class Poster:
             "senders": len(self.senders(s)),
             "max_keys": MAX_KEYS,
             "timezones": TIMEZONES,
+            "platform_status": self.platform_status(),
         }
+
+    def platform_status(self) -> list[dict]:
+        """Local counts are labelled as such; never invent a provider's daily maximum."""
+        s = self.settings()
+        limits = self._read("posting-limits.json", {})
+        rows = self.queue()
+        now = dt.datetime.now(dt.timezone.utc)
+        today = now.astimezone(ZoneInfo(s["timezone"])).date().isoformat()
+        result = []
+        for slot in self.senders(s):
+            label = "Main account" if slot == 1 else next(e["label"] for e in s["extra"] if e["slot"] == slot)
+            for platform, account in self.accounts_for(slot, s).items():
+                if not account:
+                    continue
+                limit = limits.get(f"{slot}:{platform}:{account}") or {}
+                matching = [i for i in rows if i.get("slot", 1) == slot and
+                            platform in (i.get("only") or PLATFORMS)]
+                result.append(dict(slot=slot, label=label, platform=platform,
+                    posted_today=sum(i["status"] == "published" and str(i.get("published_at") or "").startswith(today) for i in matching),
+                    pending=sum(i["status"] in OPEN + LIVE for i in matching),
+                    limited=bool(limit.get("retry_at", "") > now.isoformat()),
+                    message=limit.get("message"), retry_at=limit.get("retry_at"), reset_at=limit.get("reset_at")))
+        return result
 
     def set_key(self, key: str) -> dict:
         key = (key or "").strip()
@@ -340,45 +378,55 @@ class Poster:
         when: "now", "slots" (the daily times in Posting settings) or "at" (the buyer's own time)."""
         s = self.settings()
         picked = self.picked_times(at, len(clips), gap_minutes, zone) if when == "at" else None
-        if not any(s["accounts"].values()):
+        if not self.senders(s):
             raise ZernioError("Connect Instagram or YouTube first (Posting → Step 2).")
-        for clip in clips:
-            only = clip.get("only") or []
-            if only and not any(s["accounts"].get(p) for p in only):
-                raise ZernioError(f"Connect {' or '.join(NAMES.get(p, p) for p in only)} first (Posting → Step 2).")
         with self.lock:
             items = self.queue()
-            taken = [i["when"] for i in items if i.get("when") and i["status"] not in ("failed", "removed")]
+            taken = [i["when"] for i in items if i.get("when") and i["status"] not in ("removed", "cancelled")]
             turns = self.senders(s) or [1]
             rr = s["rr"]
             times = ([None] * len(clips) if when == "now" else picked if picked
                      else next_free_slots(s, taken, len(clips)))
             added = []
             for clip, at in zip(clips, times, strict=False):
-                ident = uuid.uuid4().hex[:12]
-                target = self.folder / f"{ident}.mp4"
-                shutil.copy2(clip["file"], target)
-                _still(target, self.folder / f"{ident}.jpg")
-                item = {
+                kind = clip.get("kind") or ("short" if is_short(Path(clip["file"])) else "long")
+                allowed = (["youtube"] if s["long_youtube"] else []) if kind == "long" else s["short_platforms"]
+                if clip.get("only"):
+                    allowed = [p for p in allowed if p in clip["only"]]
+                wanted_slot = int(clip.get("posting_slot") or 0)
+                eligible = [n for n in turns if (not wanted_slot or n == wanted_slot) and
+                            any(self.accounts_for(n, s).get(p) for p in allowed)]
+                if not eligible:
+                    raise ZernioError("No posting destination is selected for this format. Check Posting settings and accounts.")
+                slot = eligible[rr % len(eligible)]
+                accounts = self.accounts_for(slot, s)
+                clip_group = uuid.uuid4().hex
+                for platform in allowed:
+                    if not accounts.get(platform):
+                        continue
+                    # Each platform owns its post ID, retry deadline and cancellation.
+                    ident = uuid.uuid4().hex[:12]
+                    target = self.folder / f"{ident}.mp4"
+                    shutil.copy2(clip["file"], target)
+                    _still(target, self.folder / f"{ident}.jpg")
+                    item = {
                     "id": ident, "job_id": clip.get("job_id"), "index": clip.get("index"),
                     "file": target.name, "title": clip.get("title") or "Clip",
                     "caption": (clip.get("caption") or render_caption(
                         s["caption"], title=clip.get("title") or "", hashtags=s["hashtags"], streamer=clip.get("streamer") or "",
-                        dm_keyword=s["dm"]["keyword"], dm_on=s["dm"]["on"] and "instagram" in (clip.get("only") or ["instagram"])))[:4900],
-                    "only": clip.get("only") or None,
+                        dm_keyword=s["dm"]["keyword"], dm_on=s["dm"]["on"] and platform == "instagram"))[:4900],
+                    "only": [platform], "kind": kind, "accounts": {platform: accounts[platform]}, "clip_group": clip_group,
                     "when": at, "status": "waiting", "post_id": None, "error": None, "links": {},
                     # a time the buyer picked is never moved to a daily slot (late = post right away)
                     "pinned": when in ("at", "now"),
-                    "slot": turns[rr % len(turns)],
-                    "dm": "waiting" if s["dm"]["on"] and "instagram" in (clip.get("only") or ["instagram"]) else "off",
+                    "slot": slot,
+                    "dm": "waiting" if s["dm"]["on"] and platform == "instagram" and slot == 1 else "off",
                     "key": str(uuid.uuid4()),
                     "created": dt.datetime.now().isoformat(timespec="seconds"),
-                }
-                if item["slot"] != 1:
-                    item["dm"] = "off"  # auto-DM is set up for the main account only
+                    }
+                    items.append(item)
+                    added.append(item)
                 rr += 1
-                items.append(item)
-                added.append(item)
             self._save_queue(items)
             if len(turns) > 1:
                 self.save_settings({"rr": rr % len(turns)})
@@ -401,6 +449,17 @@ class Poster:
 
     def remove(self, ident: str):
         with self.lock:
+            item = next((i for i in self.queue() if i["id"] == ident), None)
+            if not item:
+                return
+            if item["status"] == "published":
+                raise ZernioError("This post is already live. Remove it on the platform if needed.")
+            if item["status"] == "uploading":
+                self._update(ident, cancel_requested=True)
+                return
+            if item.get("post_id"):
+                # If the server refuses cancellation, retain the local record and show its error.
+                self.client(item.get("slot") or 1).delete_post(item["post_id"])
             items = [i for i in self.queue() if i["id"] != ident]
             (self.folder / f"{ident}.mp4").unlink(missing_ok=True)
             (self.folder / f"{ident}.jpg").unlink(missing_ok=True)
@@ -419,33 +478,74 @@ class Poster:
             when = item.get("when")
             if when and dt.datetime.fromisoformat(when) < dt.datetime.now(ZoneInfo(s["timezone"])).replace(tzinfo=None) + dt.timedelta(minutes=10):
                 when = None if item.get("pinned") else next_free_slots(s, taken, 1)[0]
-            self._update(ident, status="waiting", error=None, when=when)
+            self._update(ident, status="waiting", error=None, when=when, retry_at=None)
             self.kick()
 
     # ---- worker ----
     def kick(self):
-        self.wake.set()
-        if not self.worker or not self.worker.is_alive():
-            self.worker = threading.Thread(target=self._run, name="poster", daemon=True)
-            self.worker.start()
+        with self.lock:
+            self.wake.set()
+            if not self.worker or not self.worker.is_alive():
+                self.worker = threading.Thread(target=self._run, name="poster", daemon=True)
+                self.worker.start()
 
     def _run(self):
+        last_refresh = 0.0
         while True:
             self.wake.clear()
-            pending = [i for i in self.queue() if i["status"] == "waiting"]
+            if time.monotonic() - last_refresh >= 60:
+                last_refresh = time.monotonic()
+                self.refresh(only_due=True)
+            now = dt.datetime.now(dt.timezone.utc).isoformat()
+            pending = [i for i in self.queue() if i["status"] in ("waiting", "retrying") and
+                       (not i.get("retry_at") or i["retry_at"] <= now)]
             if not pending:
-                if not self.wake.wait(30):
-                    return
+                if any(i["status"] in ("retrying", *LIVE) for i in self.queue()):
+                    self.wake.wait(10)
+                elif not self.wake.wait(30):
+                    with self.lock:
+                        if not self.wake.is_set():
+                            self.worker = None
+                            return
                 continue
             self.send(pending[0]["id"])
 
     def send(self, ident: str):
+        with self.send_lock:
+            self._send(ident)
+
+    def _defer(self, item, error, accounts):
+        text = str(error)
+        # A generic 429 needn't mean a daily cap. Preserve the provider's wording.
+        quota = any(term in text.lower() for term in ("daily", "quota", "upload limit", "uploadlimit", "too many videos"))
+        wait = getattr(error, "retry_after", None) or (12 * 3600 if quota else 120)
+        retry_at = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=min(max(wait, 5), 7 * 86400))).isoformat()
+        self._update(item["id"], status="retrying", error=text, retry_at=retry_at,
+                     reset_at=retry_at if getattr(error, "retry_after", None) and quota else None)
+        with self.lock:
+            limits = self._read("posting-limits.json", {})
+            for platform, account in accounts.items():
+                limits[f"{item.get('slot') or 1}:{platform}:{account}"] = dict(
+                    message=text, retry_at=retry_at, reset_at=retry_at if getattr(error, "retry_after", None) and quota else None)
+            self._write("posting-limits.json", limits)
+
+    def _send(self, ident: str):
         item = next((i for i in self.queue() if i["id"] == ident), None)
-        if not item or item["status"] != "waiting":
+        if not item or item["status"] not in ("waiting", "retrying"):
+            return
+        if item.get("retry_at", "") and item["retry_at"] > dt.datetime.now(dt.timezone.utc).isoformat():
             return
         s = self.settings()
         slot = item.get("slot") or 1
-        accounts = {p: a for p, a in self.accounts_for(slot, s).items() if a and (not item.get("only") or p in item["only"])}
+        accounts = {p: a for p, a in (item.get("accounts") or self.accounts_for(slot, s)).items()
+                    if a and (not item.get("only") or p in item["only"])}
+        limits = self._read("posting-limits.json", {})
+        for platform, account in accounts.items():
+            limit = limits.get(f"{slot}:{platform}:{account}") or {}
+            if limit.get("retry_at", "") > dt.datetime.now(dt.timezone.utc).isoformat():
+                self._update(ident, status="retrying", error=limit.get("message"), retry_at=limit["retry_at"],
+                             reset_at=limit.get("reset_at"))
+                return
         when = item.get("when")
         if when:
             now_local = dt.datetime.now(ZoneInfo(s["timezone"])).replace(tzinfo=None)
@@ -460,15 +560,33 @@ class Poster:
             if not accounts:
                 raise ZernioError("No account is connected for this Zernio key. Check Posting.")
             client = self.client(slot)
-            url = client.upload(self.folder / item["file"])
-            post = client.create_post(video_url=url, caption=item["caption"], title=item["title"], accounts=accounts,
+            shared = next((i.get("media_url") for i in self.queue() if item.get("clip_group") and
+                           i.get("clip_group") == item["clip_group"] and i.get("media_url")), None)
+            url = item.get("media_url") or shared or client.upload(self.folder / item["file"])
+            self._update(ident, media_url=url)
+            if item.get("post_id"):
+                post = client.retry(item["post_id"])
+            else:
+                post = client.create_post(video_url=url, caption=item["caption"], title=item["title"], accounts=accounts,
                                       when=f"{when}:00" if when else None, timezone=s["timezone"], idempotency_key=item["key"],
-                                      short=is_short(self.folder / item["file"]))
+                                      short=item.get("kind") != "long" and is_short(self.folder / item["file"]))
         except (ZernioError, OSError) as error:
-            self._update(ident, status="failed", error=str(error))
+            if (getattr(error, "retry_after", None) or getattr(error, "status_code", None) == 429
+                    or getattr(error, "status_code", 0) and error.status_code >= 500):
+                self._defer(item, error, accounts)
+            else:
+                self._update(ident, status="failed", error=str(error))
             return
-        item = next(i for i in self.queue() if i["id"] == ident)
+        item = next((i for i in self.queue() if i["id"] == ident), None)
+        if item is None:
+            return
         self._apply_post(item, post)
+        if item.get("cancel_requested"):
+            try:
+                self.remove(ident)
+            except ZernioError as error:
+                self._update(ident, error=f"Cancellation failed: {error}")
+            return
         if item.get("dm") == "waiting" and slot == 1 and accounts.get("instagram") and post.get("_id"):
             self._set_dm(item, post_id=post["_id"])
 
@@ -477,6 +595,8 @@ class Poster:
         links, errors, ig_post = {}, [], None
         for entry in post.get("platforms") or []:
             platform = entry.get("platform")
+            if item.get("only") and platform not in item["only"]:
+                continue
             if entry.get("platformPostUrl"):
                 links[platform] = entry["platformPostUrl"]
             if entry.get("status") == "failed":
@@ -485,10 +605,19 @@ class Poster:
                 ig_post = entry["platformPostId"]
         status = {"pending": "scheduled", "draft": "scheduled", "cancelled": "failed"}.get(status, status)
         changes = {"post_id": post.get("_id") or item.get("post_id"), "status": status, "links": links or item.get("links") or {},
-                   "error": "; ".join(errors) or None}
+                   "error": "; ".join(errors) or None, "retry_at": None}
+        if status == "published":
+            changes["published_at"] = item.get("published_at") or dt.datetime.now(ZoneInfo(self.settings()["timezone"])).isoformat()
         if ig_post:
             changes["ig_post_id"] = ig_post
         self._update(item["id"], **changes)
+        if status in ("failed", "partial") and errors and any(
+                t in " ".join(errors).lower() for t in ("limit", "quota", "temporar", "try again")):
+            current = next((i for i in self.queue() if i["id"] == item["id"]), item)
+            accounts = item.get("accounts") or self.accounts_for(item.get("slot") or 1)
+            # Split posts have one target. Legacy combined posts are left intact to avoid resending successes.
+            if len(item.get("only") or []) == 1:
+                self._defer(current, ZernioError("; ".join(errors)), accounts)
         current = next((i for i in self.queue() if i["id"] == item["id"]), item)
         if ig_post and current.get("dm") in ("waiting", "failed") and status in ("published", "partial"):
             self._set_dm(current, platform_post_id=ig_post)  # fallback if the early hookup failed
@@ -504,15 +633,19 @@ class Poster:
         except ZernioError as error:
             self._update(item["id"], dm="failed", error=f"Auto-DM: {error}")
 
-    def refresh(self) -> list[dict]:
+    def refresh(self, only_due=False) -> list[dict]:
         """Ask Zernio how the scheduled posts are doing. Quietly skips if offline."""
         items = self.queue()
         live = [i for i in items if i.get("post_id") and (i["status"] in LIVE or (i["status"] == "published" and i.get("dm") in ("waiting", "failed")))]
-        for item in live:
+        if only_due:
+            now = dt.datetime.now(ZoneInfo(self.settings()["timezone"])).replace(tzinfo=None).isoformat()
+            live = [i for i in live if not i.get("when") or i["when"] <= now]
+        for item in sorted(live, key=lambda i: i.get("checked_at") or "")[:5]:
             try:
+                self._update(item["id"], checked_at=dt.datetime.now(dt.timezone.utc).isoformat())
                 self._apply_post(item, self.client(item.get("slot") or 1).get_post(item["post_id"]))
             except ZernioError:
                 pass
-        if any(i["status"] == "waiting" for i in self.queue()):
+        if any(i["status"] in ("waiting", "retrying") for i in self.queue()):
             self.kick()
         return self.queue()

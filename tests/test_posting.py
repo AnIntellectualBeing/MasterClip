@@ -80,14 +80,14 @@ def poster(tmp_path, monkeypatch):
 
 
 def test_slots_skip_past_and_taken():
-    s = clean_settings({"per_day": 2, "slots": ["18:00", "12:00"], "timezone": "Asia/Kolkata"})
+    s = clean_settings({"cadence": "daily", "per_day": 2, "slots": ["18:00", "12:00"], "timezone": "Asia/Kolkata"})
     now = dt.datetime(2026, 11, 22, 7, 0, tzinfo=dt.timezone.utc)  # 12:30 IST
     assert next_free_slots(s, [], 3, now) == ["2026-11-22T18:00", "2026-11-23T12:00", "2026-11-23T18:00"]
     assert next_free_slots(s, ["2026-11-22T18:00"], 1, now) == ["2026-11-23T12:00"]
 
 
 def test_slot_less_than_ten_minutes_away_is_skipped():
-    s = clean_settings({"per_day": 1, "slots": ["12:00"], "timezone": "Asia/Kolkata"})
+    s = clean_settings({"cadence": "daily", "per_day": 1, "slots": ["12:00"], "timezone": "Asia/Kolkata"})
     now = dt.datetime(2026, 11, 22, 6, 25, tzinfo=dt.timezone.utc)  # 11:55 IST
     assert next_free_slots(s, [], 1, now) == ["2026-11-23T12:00"]
 
@@ -136,7 +136,10 @@ def test_queue_upload_schedule_dm_and_retry(poster, tmp_path):
     assert early["post_id"] == "post1" and early["keyword"] == "LINK"
     assert poster.queue()[0]["dm"] == "set"
     post = next(entry for entry in poster.log if entry[0] == "post")[1]
-    assert post["accounts"] == {"instagram": "ig1", "youtube": "yt1"} and post["when"].endswith(":00")
+    assert post["accounts"] == {"instagram": "ig1"} and post["when"].endswith(":00")
+    youtube = added[1]
+    poster.send(youtube["id"])
+    assert [p["accounts"] for k, p in poster.log if k == "post"] == [{"instagram": "ig1"}, {"youtube": "yt1"}]
     assert poster.queue()[0]["status"] == "scheduled"
     poster.refresh()
     done = poster.queue()[0]

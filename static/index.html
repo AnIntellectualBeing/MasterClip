@@ -24,6 +24,8 @@
       <span>MasterClip</span>
     </a>
     <div class="top-actions">
+      <button id="newWindow" class="ghost" type="button" title="Start another stream without stopping this one">＋ New window</button>
+      <a class="ghost" href="/help" target="_blank" rel="noopener">Help</a>
       <button id="openLicence" class="ghost licence-chip" type="button" title="Your licence" hidden><span id="licenceChip">Free trial</span></button>
       <button id="openPosting" class="ghost" type="button" title="Post clips to Instagram and YouTube">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 5h-3v6h-4V8H7zM5 15h2v3h10v-3h2v5H5z"/></svg>
@@ -76,7 +78,7 @@
       </div>
       <div class="postmode" role="radiogroup" aria-label="Posting">
         <button type="button" class="pmode on" data-postmode="manual"><strong>✋ I'll pick the clips</strong><small>Make clips, then choose which ones to post</small></button>
-        <button type="button" class="pmode" data-postmode="auto"><strong>🤖 Auto-post every clip</strong><small>Each new clip goes out at your daily posting times, non-stop (great with live streams)</small></button>
+        <button type="button" class="pmode" data-postmode="auto"><strong>🤖 Auto-post every clip</strong><small>Connect accounts once, choose clips per hour, and let it keep posting</small></button>
       </div>
       <div class="panel-head second">
         <h1 id="step1Title">Where's the video?</h1>
@@ -159,13 +161,13 @@
         <div id="liveBox" class="range-box" hidden>
           <div class="range-head"><strong>🔴 It's live! Record for…</strong></div>
           <div class="seg" id="liveMinutes">
-            <button type="button" data-min="0" class="on">Until I stop</button>
+            <button type="button" data-min="0" class="on">Non-stop auto-clipping</button>
             <button type="button" data-min="2">2 min</button>
             <button type="button" data-min="5">5 min</button>
             <button type="button" data-min="10">10 min</button>
             <button type="button" data-min="30">30 min</button>
           </div>
-          <p class="hint" id="liveHint">Recording starts when you press Find hype moments; anything before that isn't recorded (for earlier moments, pick the past broadcast instead). New clips come every 5 minutes, sooner when Twitch chat goes wild or you press ✂ Clip now. Each clip takes a minute or two to make. Stops when you press Stop (or after 4 hours).</p>
+          <p class="hint" id="liveHint">Start once: we check each new minute, make clips of the best moments and keep going until you press Stop or the stream ends. Clip now is optional. Keep MasterClip and your PC running.</p>
         </div>
         <div class="row-end"><button id="toStep2" class="primary big" type="button">Next: pick a template →</button></div>
       </div>
@@ -257,10 +259,12 @@
           </div>
           <input id="customLength" class="num" type="number" min="5" max="180" value="20" hidden aria-label="Custom length in seconds">
         </div>
-        <div class="setting">
+        <label class="setting" id="qualitySetting"><span class="setting-label">Download &amp; export quality</span><select id="exportQuality"><option value="720">HD · 720p · faster</option><option value="1080" selected>Full HD · 1080p</option><option value="2160">4K · 2160p · best available source</option></select><small class="muted">4K takes longer and uses more storage. Source quality and cropping determine detail; a low-resolution source cannot become native 4K.</small></label>
+        <div class="setting" id="clipCountSetting">
           <span class="setting-label">How many clips</span>
           <div class="stepper-num"><button type="button" id="countMinus" aria-label="Fewer">−</button><span id="countValue">3</span><button type="button" id="countPlus" aria-label="More">+</button></div>
         </div>
+        <p id="continuousNote" class="hint" hidden>Non-stop mode: clips keep coming as good moments are found. No total clip count, and no need to press Clip now.</p>
         <div class="setting ai-setting">
           <span class="setting-label">✨ AI boost <small class="muted">(optional: better moments + funnier titles)</small></span>
           <div class="seg" id="aiMode">
@@ -337,6 +341,11 @@
           </div>
         </div>
         <p id="aiNote" class="ai-note" hidden></p>
+        <section id="postOverview" class="post-overview" aria-label="Automatic posting status" hidden>
+          <div class="row-between"><strong>Posting status</strong><button id="outputPosting" class="ghost small" type="button">Accounts &amp; posting speed</button></div>
+          <div id="platformStatus" class="platform-status" aria-live="polite"></div>
+          <p class="hint">YouTube and Instagram post separately. If one reaches a limit, the other keeps going. Download any clip below for manual upload.</p>
+        </section>
         <div id="clips" class="clips"></div>
         <div class="long-box" id="longBox">
           <div class="long-head">
@@ -472,7 +481,7 @@
             <select id="schedGap" aria-label="Time between clips"><option value="15">15 min</option><option value="30">30 min</option><option value="60" selected>1 hour</option><option value="120">2 hours</option><option value="240">4 hours</option><option value="1440">1 day</option></select>
           </label>
         </div>
-        <label class="sched-pick"><input type="radio" name="schedWhen" value="slots"><span><strong>My daily times</strong><small id="schedSlots">The times set in Posting → Settings.</small></span></label>
+        <label class="sched-pick"><input type="radio" name="schedWhen" value="slots"><span><strong>Use my posting schedule</strong><small id="schedSlots">The speed or times set in Posting.</small></span></label>
         <p id="schedNote" class="hint"></p>
         <div class="row-between">
           <button id="schedCancel" class="ghost" type="button">Cancel</button>
@@ -573,11 +582,16 @@
           </section>
 
           <section class="pstep" id="pstep3">
-            <div class="pstep-head"><span class="pnum">3</span><div><h3>When and what to post</h3><p class="muted">Clips go out at these times, one per time slot.</p></div></div>
+            <div class="pstep-head"><span class="pnum">3</span><div><h3>When and what to post</h3><p class="muted">Choose your posting speed. Finished clips join the queue automatically when Auto-post is on.</p></div></div>
             <div class="settings-grid">
-              <div class="field"><span>Uploads per day</span><div class="seg" id="perDay"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button></div></div>
+              <label class="field"><span>Posting schedule</span><select id="postCadence"><option value="hourly">Clips per hour</option><option value="daily">Daily posting times</option></select></label>
+              <label class="field" id="hourlyField"><span>Clips per hour <small>(per destination)</small></span><input id="clipsPerHour" type="number" min="1" max="60" value="6"><small class="muted">Spread evenly through each hour, as clips become ready. Platform limits still apply.</small></label>
+              <div class="field" id="dailyField"><span>Uploads per day</span><div class="seg" id="perDay"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button></div></div>
               <label class="field"><span>Time zone</span><select id="tz"></select></label>
-              <div class="field wide"><span>Times</span><div id="slots" class="slot-row"></div></div>
+              <div class="field wide" id="dailyTimesField"><span>Times</span><div id="slots" class="slot-row"></div></div>
+              <div class="field wide format-routing"><span>Vertical clips (Shorts / Reels)</span><label><input id="shortInstagram" type="checkbox" checked> Instagram Reels</label><label><input id="shortYoutube" type="checkbox" checked> YouTube Shorts</label></div>
+              <div class="field wide format-routing"><span>Long / 16:9 videos</span><label><input id="longYoutube" type="checkbox" checked> YouTube videos</label><small class="muted">Long videos never go to Instagram. With both formats, YouTube gets both; Instagram gets only vertical clips.</small></div>
+              <label class="field wide"><span>Posting account for this window</span><select id="sessionSender"><option value="0">Use account rotation settings</option></select><small class="muted">Choose an account here to keep this stream separate from your other windows. Posting speed and format settings are shared.</small></label>
               <label class="field wide"><span>Caption <b>use {title} {hashtags} {streamer}</b></span><textarea id="captionTpl" rows="3"></textarea></label>
               <label class="field wide"><span>Hashtags</span><input id="hashtags" type="text"></label>
               <div class="field wide"><span>Preview</span><pre id="captionPreview" class="caption-preview"></pre></div>
@@ -595,7 +609,7 @@
           </section>
         </div>
         <div id="ptab-queue" class="ptab" hidden>
-          <div class="row-between"><p class="muted" id="queueHint">Clips you schedule show up here.</p><button id="queueRefresh" class="ghost small" type="button">↻ Refresh</button></div>
+          <div class="row-between"><p class="muted" id="queueHint">Automatically scheduled clips show up here.</p><button id="queueRefresh" class="ghost small" type="button">↻ Refresh</button></div>
           <div id="queueList" class="queue-list"></div>
         </div>
       </div>

@@ -39,6 +39,7 @@ my_templates = MyTemplates(store.root)
 
 @asynccontextmanager
 async def lifespan(app):
+    poster.kick()
     yield
     for event in events.values():
         event.set()
@@ -61,6 +62,11 @@ app.mount(
 )
 
 
+@app.get("/help", include_in_schema=False)
+def installation_help():
+    return FileResponse(ROOT / "static" / "help.html", media_type="text/html")
+
+
 class SourceRequest(BaseModel):
     source_type: Literal["path", "url"] = "path"
     source: str = Field(min_length=1, max_length=4096)
@@ -69,6 +75,7 @@ class SourceRequest(BaseModel):
     # "spoken" = captions in the language people speak; "en" = English captions for any language
     captions_in: Literal["roman", "spoken", "en"] = "roman"
     model: Literal["tiny", "base", "small"] = "base"
+    source_height: Literal[720, 1080, 2160] = 1080
     capture_seconds: int = Field(default=600, ge=30, le=10800)
 
     @field_validator("language")
@@ -122,7 +129,7 @@ class ProjectRequest(SourceRequest):
     recipe: dict | None = None
     # Long VOD: read the whole stream's signals, download only the hottest parts.
     scan_whole: bool = False
-    # Live only: keep recording and clipping every few minutes until Stop (max 4 h).
+    # Live only: keep recording and clipping until Stop or the stream ends.
     live_rolling: bool = False
 
 
@@ -161,19 +168,38 @@ class Recipe(BaseModel):
     formats: list[RecipeFormat] | None = Field(default=None, max_length=2)
     # First screen "Auto-post every clip": each finished clip joins the posting queue (daily times).
     auto_post: bool = False
+    posting_slot: int = Field(default=0, ge=0, le=30)
+    resolution: Literal[720, 1080, 2160] = 1080
+
+
+def validate_auto_post(recipe):
+    if not (recipe or {}).get("auto_post"):
+        return
+    if not poster.status()["ready"]:
+        raise HTTPException(400, "Set up Posting first: add your Zernio key, select an account and save your posting times.")
+    slot = recipe.get("posting_slot") or 0
+    if slot and slot not in poster.senders():
+        raise HTTPException(400, "The posting account for this window is unavailable. Select it again in Posting.")
 
 
 def auto_post_clip(ident, job, clip):
     """Queue a finished clip for posting when the buyer chose auto-post. Never breaks the job."""
     if not (job.get("recipe") or {}).get("auto_post"):
         return
+    settings = poster.settings()
+    if (clip.get("kind") == "long" and not settings["long_youtube"] or
+            clip.get("kind") != "long" and not settings["short_platforms"]):
+        clip["posting_note"] = "Saved only: posting is disabled for this format."
+        return
     try:
         path = store.folder(ident) / clip["file"]
         item = {"file": path, "title": clip.get("title") or "", "streamer": job.get("channel") or "",
-                "job_id": ident, "index": clip["index"]}
+                "job_id": ident, "index": clip["index"], "kind": clip.get("kind") or "short",
+                "posting_slot": (job.get("recipe") or {}).get("posting_slot", 0)}
         if clip.get("kind") == "long":
             item["only"] = ["youtube"]
-        poster.add([item], "slots")
+        added = poster.add([item], "slots")
+        clip["posting_ids"] = [i["id"] for i in added]
     except Exception as exc:  # no key / no account: tell the buyer once, keep clipping
         warnings = list(store.get(ident).get("warnings") or [])
         note = f"Auto-post is on but this clip wasn't queued: {str(exc)[:160]}"
@@ -282,7 +308,8 @@ def analyze(ident, options, imported_transcript=None):
             from .sources import import_hotspots
 
             source, title, hot_chat, parts = import_hotspots(
-                options.source, folder, event, lambda p, m: progress(ident, "importing", p * 0.25, m))
+                options.source, folder, event, lambda p, m: progress(ident, "importing", p * 0.25, m),
+                max_height=options.source_height)
             store.update(ident, title=title, source_path=str(source), section=None, parts=[list(p) for p in parts])
         elif options.source_type == "url":
             section = store.get(ident).get("section")
@@ -294,6 +321,7 @@ def analyze(ident, options, imported_transcript=None):
                 lambda p, m: progress(ident, "importing", p * 0.25, m),
                 section=(section["start"], section["end"]) if section else None,
                 captions_language=options.language if options.transcribe and imported_transcript is None else None,
+                max_height=options.source_height,
             )
             store.update(ident, title=title, source_path=str(source))
         info = probe_media(source)
@@ -484,6 +512,7 @@ def job_design(job, template, overrides=None):
     if not extra.get("credit"):
         extra["credit"] = job.get("channel") or ""
     recipe = job.get("recipe") or {}
+    extra["resolution"] = recipe.get("resolution") or 1080
     if recipe.get("aspect") and "aspect" not in extra and not recipe.get("formats"):
         extra["aspect"] = recipe["aspect"]
     return template_design(template, my_templates.all(), **extra)
@@ -999,6 +1028,7 @@ def create_project(options: ProjectRequest):
         except ValueError as exc:
             raise HTTPException(400, f"Check your clip settings: {exc}")
     licence_gate()
+    validate_auto_post(recipe)
     if options.live_rolling:
         if options.source_type != "url":
             raise HTTPException(400, "Keep clipping only works with a live stream link.")
@@ -1335,6 +1365,7 @@ def upload_project(
             parsed = Recipe(**json.loads(recipe)).model_dump()
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, f"Check your clip settings: {exc}")
+    validate_auto_post(parsed)
     job = enqueue_upload(
         file,
         True,
@@ -1555,6 +1586,10 @@ class PostSettings(BaseModel):
     hashtags: str | None = Field(default=None, max_length=500)
     dm: dict | None = None
     rotate: bool | None = None
+    short_platforms: list[Literal["instagram", "youtube"]] | None = Field(default=None, max_length=2)
+    long_youtube: bool | None = None
+    cadence: Literal["hourly", "daily"] | None = None
+    clips_per_hour: int | None = Field(default=None, ge=1, le=60)
 
 
 class QueueRequest(BaseModel):
@@ -1645,7 +1680,7 @@ def post_settings(body: PostSettings):
 @app.get("/api/post/queue")
 def post_queue(refresh: bool = False):
     items = poster.refresh() if refresh else poster.queue()
-    return {"items": items}
+    return {"items": items, "platform_status": poster.platform_status(), "timezone": poster.settings()["timezone"]}
 
 
 @app.post("/api/post/queue")
@@ -1657,7 +1692,7 @@ def post_add(body: QueueRequest):
             raise HTTPException(404, "Video not found")
         video = videos[body.long_index]
         item = {"file": store.folder(body.job_id) / video["file"], "title": video["title"], "caption": video["description"],
-                "only": ["youtube"], "job_id": body.job_id, "index": f"long-{body.long_index}"}
+                "only": ["youtube"], "kind": "long", "job_id": body.job_id, "index": f"long-{body.long_index}"}
         added = _zernio(poster.add, [item], body.when, body.at, body.gap_minutes, body.zone)
         return {"added": added, "items": poster.queue()}
     clips = job.get("clips") or []
@@ -1668,8 +1703,12 @@ def post_add(body: QueueRequest):
     for clip in wanted:
         path = store.folder(body.job_id) / clip["file"]
         if path.is_file():
-            items.append({"file": path, "title": clip.get("title") or "", "streamer": job.get("channel") or "",
-                          "job_id": body.job_id, "index": clip["index"]})
+            item = {"file": path, "title": clip.get("title") or "", "streamer": job.get("channel") or "",
+                    "job_id": body.job_id, "index": clip["index"], "kind": clip.get("kind") or "short",
+                    "posting_slot": (job.get("recipe") or {}).get("posting_slot", 0)}
+            if item["kind"] == "long":
+                item["only"] = ["youtube"]
+            items.append(item)
     added = _zernio(poster.add, items, body.when, body.at, body.gap_minutes, body.zone)
     return {"added": added, "items": poster.queue()}
 
@@ -1706,7 +1745,7 @@ def post_retry(ident: str):
 
 @app.delete("/api/post/queue/{ident}")
 def post_remove(ident: str):
-    poster.remove(ident)
+    _zernio(poster.remove, ident)
     return {"items": poster.queue()}
 
 
@@ -1918,9 +1957,9 @@ def _mmss(seconds):
 
 def live_window_seconds() -> int:
     try:
-        return max(20, min(900, int(os.environ.get("CLIPSTUDIO_LIVE_WINDOW", "300"))))
+        return max(20, min(900, int(os.environ.get("CLIPSTUDIO_LIVE_WINDOW", "60"))))
     except ValueError:
-        return 300
+        return 60
 
 
 def _live_recorder(ident, options, folder):
@@ -2020,7 +2059,7 @@ def _live_window(ident, source, start, end, number, transcript, found, clips, re
     job = store.get(ident)
     boosted = Booster(store.root).on
     length = int(recipe.get("length") or 30)
-    count = int(count if count is not None else (recipe.get("count") or 3))
+    count = int(count if count is not None else 1)
     forced = []
     if clip_now:
         # the moment just happened: keep the last few seconds as the payoff, setup before it

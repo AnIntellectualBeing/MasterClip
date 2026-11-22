@@ -21,8 +21,8 @@ from .sources import (
     child_env,
 )
 
-WINDOW_SECONDS = 300
-MAX_SECONDS = 4 * 3600
+WINDOW_SECONDS = 60
+MAX_SECONDS = None  # Continuous means until Stop or the stream ends.
 KEYFRAME_SECONDS = 2
 
 
@@ -36,7 +36,7 @@ class LiveRecorder:
         self.progress_file = self.folder / "record-progress.txt"
         self.inputs = inputs
         self.audio_map = audio_map
-        self.max_seconds = int(max_seconds)
+        self.max_seconds = int(max_seconds) if max_seconds else None
         self.proc = None
         self.log = None
         self.started = 0.0
@@ -57,7 +57,8 @@ class LiveRecorder:
         return [
             find_tool("ffmpeg"), "-y", "-hide_banner", "-loglevel", "error",
             *self.inputs,
-            "-t", str(self.max_seconds), "-map", "0:v:0", "-map", self.audio_map,
+            *(["-t", str(self.max_seconds)] if self.max_seconds else []),
+            "-map", "0:v:0", "-map", self.audio_map,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
             "-force_key_frames", f"expr:gte(t,n_forced*{KEYFRAME_SECONDS})",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000",

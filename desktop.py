@@ -209,6 +209,20 @@ def watch_webview_process(folder: Path):
     edgechromium.EdgeChrome.on_webview_ready = on_ready
 
 
+class DesktopWindows:
+    """Additional windows share the running engine; each page owns its own session."""
+
+    def __init__(self, url, backend):
+        self.url = url.rstrip("/")
+        self.backend = backend
+
+    def new_window(self):
+        self.backend.create_window(APP_NAME, self.url + "/?new=1", width=1280, height=880,
+                                   min_size=(900, 640), background_color="#FBF6EF", text_select=True,
+                                   js_api=self)
+        return {"opened": True}
+
+
 def main():
     folder = data_dir()
     setup_logging(folder)
@@ -243,9 +257,10 @@ def main():
         webview.settings["ALLOW_DOWNLOADS"] = True
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
         watch_webview_process(folder)
+        windows = DesktopWindows(url, webview)
         window = webview.create_window(
             APP_NAME, url, width=1280, height=880, min_size=(900, 640),
-            background_color="#FBF6EF", text_select=True,
+            background_color="#FBF6EF", text_select=True, js_api=windows,
         )
         user_closed = threading.Event()
         window.events.closing += lambda *_: user_closed.set()

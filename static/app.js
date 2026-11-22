@@ -14,6 +14,25 @@ const state = {
   poll: null,
 };
 
+$("#newWindow").addEventListener("click", async () => {
+  try {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.new_window) {
+      await window.pywebview.api.new_window();
+    } else {
+      const opened = window.open("/?new=1", "_blank");
+      if (!opened) toast("Allow pop-ups for MasterClip to open another window.");
+    }
+  } catch (err) { notice("Couldn't open a new window. " + err.message); }
+});
+function continuousSource() {
+  return state.source && state.source.kind === "url" && state.source.info.is_live && !state.source.liveMinutes;
+}
+function paintContinuousChoice() {
+  $("#clipCountSetting").hidden = !!continuousSource();
+  $("#continuousNote").hidden = !continuousSource();
+  $("#qualitySetting").hidden = !!(state.source && state.source.info && state.source.info.is_live);
+}
+
 /* ---------- helpers ---------- */
 async function api(path, options = {}) {
   const init = { ...options };
@@ -104,6 +123,7 @@ function go(step) {
   });
   notice("");
   if (step === 2) window.ClipDesigner.enter(state.source);
+  paintContinuousChoice();
   if (step === 3) renderSummary();
   if (step !== 1) $("#welcomeBack").hidden = true;
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -339,7 +359,8 @@ $$("#liveMinutes button").forEach((b) => b.addEventListener("click", () => {
   state.source.liveMinutes = Number(b.dataset.min);
   $("#liveHint").textContent = state.source.liveMinutes
     ? "We record from when you press Find hype moments, then find the best moments in it. Earlier moments aren't recorded."
-    : "Recording starts when you press Find hype moments; anything before that isn't recorded (for earlier moments, pick the past broadcast instead). New clips come every 5 minutes, sooner when Twitch chat goes wild or you press ✂ Clip now. Each clip takes a minute or two to make. Stops when you press Stop (or after 4 hours).";
+    : "Start once: we check each new minute and make clips of good moments until you press Stop or the stream ends. Clip now is optional. Keep MasterClip and your PC running.";
+  paintContinuousChoice();
 }));
 
 /* file */
@@ -440,30 +461,28 @@ function renderSummary() {
   const best = n === 1 ? "the most hype moment" : `the ${n} most hype moments`;
   const firstRun = state.speech && state.speech.state === "download" ? " The first captioned video downloads the speech model once (about 150 MB)." : "";
   $("#summary").textContent = (src && src.kind === "url" && src.info.is_live && !src.liveMinutes
-    ? `We'll record the live stream from now on. Every 5 minutes (sooner when Twitch chat goes wild) we find ${best} and ${plan}, until you press Stop. Each clip is saved to your PC as soon as it's made.`
+    ? `We'll keep checking each new minute for good moments and ${plan}, until you press Stop or the stream ends. No clip target and no need to press Clip now.${state.autoPost ? " Finished clips post automatically at your chosen speed." : " Each clip is saved as soon as it's ready."}`
     : `We'll ${where}, find ${best} and ${plan}.`) + firstRun;
   $("#makeBox").hidden = false;
 }
 function recipePayload() {
-  return { ...window.ClipDesigner.payload(), length: state.recipe.length, count: state.recipe.count, auto_post: state.autoPost === true };
+  return { ...window.ClipDesigner.payload(), length: state.recipe.length, count: state.recipe.count, auto_post: state.autoPost === true,
+    posting_slot: window.ClipPosting ? window.ClipPosting.sessionSlot() : 0,
+    resolution: state.source && state.source.info && state.source.info.is_live ? 1080 : Number($("#exportQuality").value) };
 }
 // First screen: auto-post every clip, or pick by hand.
 function setPostMode(mode) {
   state.autoPost = mode === "auto";
   $$("[data-postmode]").forEach((b) => b.classList.toggle("on", b.dataset.postmode === mode));
-  try { localStorage.setItem("clipstudio.postmode", mode); } catch { /* private mode */ }
+  try { sessionStorage.setItem("clipstudio.postmode", mode); } catch { /* private mode */ }
 }
 $$("[data-postmode]").forEach((b) => b.addEventListener("click", async () => {
   setPostMode(b.dataset.postmode);
   if (b.dataset.postmode === "auto") {
-    try {
-      const st = await api("/api/post/status");
-      if (!st.ready) { toast("Connect your Zernio key and accounts first, then clips post by themselves."); if (window.ClipPosting) window.ClipPosting.open("setup"); }
-      else toast("🤖 Auto-post is on: every new clip goes out at your daily times.");
-    } catch { /* offline */ }
+    if (window.ClipPosting) window.ClipPosting.openAutoSetup();
   }
 }));
-try { setPostMode(localStorage.getItem("clipstudio.postmode") || "manual"); } catch { setPostMode("manual"); }
+try { setPostMode(sessionStorage.getItem("clipstudio.postmode") || "manual"); } catch { setPostMode("manual"); }
 async function trialUsedUp() {
   // Ask first, so a big file isn't copied just to hear "trial over" (T4: silent freeze on 402).
   try {
@@ -482,6 +501,7 @@ $("#makeClips").addEventListener("click", async () => {
   notice("");
   const src = state.source;
   if (!src) { go(1); notice("Pick a video first."); return; }
+  if (state.autoPost && window.ClipPosting && !await window.ClipPosting.ensureReady()) return;
   $("#payBox").hidden = true;
   if (await trialUsedUp()) { showPayBox(); return; }
   $("#failed").hidden = true;
@@ -495,6 +515,7 @@ $("#makeClips").addEventListener("click", async () => {
     if (src.kind === "url") {
       const body = {
         source_type: "url", source: src.url, captions: window.ClipDesigner.captionsOn(), language: $("#language").value,
+        source_height: Number($("#exportQuality").value),
         captions_in: $("#captionsIn").value,
         from_discovery: true, recipe: recipePayload(), format: "vertical",
       };
@@ -600,7 +621,7 @@ function watchJob(id) {
     try {
       const job = await api(`/api/jobs/${id}`);
       state.job = job;
-      try { localStorage.setItem("clipstudio.lastJob", id); } catch { /* private mode */ }
+      try { sessionStorage.setItem("clipstudio.lastJob", id); localStorage.setItem("clipstudio.lastJob", id); } catch { /* private mode */ }
       if (job.status === "live" || (job.live && job.status === "queued")) {
         $("#working").hidden = true;
         showLive(job);
@@ -681,8 +702,8 @@ function showLive(job) {
   const n = (job.clips || []).length;
   const bits = [`${clock(live.recorded || 0)} recorded`, `${n} clip${n === 1 ? "" : "s"} so far`];
   if (!stopping && live.window && live.state !== "starting") {
-    const next = Math.max(0, ((live.windows || 0) + 1) * live.window - (live.recorded || 0));
-    bits.push(live.state === "clipping" ? "making clips now" : `next clips in ${clock(next)}`);
+    const next = Math.max(0, (live.clipped || 0) + live.window - (live.recorded || 0));
+    bits.push(live.state === "clipping" ? "making clips now" : `next automatic scan in ${clock(next)}`);
   }
   if (job.saved_to) bits.push("saved to your PC");
   $("#liveMeta").textContent = " · " + bits.join(" · ");
@@ -745,7 +766,7 @@ function paintCards(job) {
   $("#longBox").hidden = live;
   $("#clips").replaceChildren(...(job.clips || []).map((clip) => {
     const shape = clipShape(job, clip);
-    const card = el("div", { class: "clip" + (shape === "16:9" ? " landscape" : shape === "1:1" ? " square" : "") });
+    const card = el("div", { class: "clip" + (shape === "16:9" ? " landscape" : shape === "1:1" ? " square" : ""), "data-clip-index": clip.index });
     if (!live) card.append(el("button", { class: "clip-x", type: "button", title: "Remove this clip", "aria-label": "Remove this clip", text: "✕",
       onclick: async () => {
         try {
@@ -762,12 +783,14 @@ function paintCards(job) {
     card.append(video, el("div", { class: "clip-body" },
       title,
       el("span", { class: "muted", style: "font-size:13px", text: `${mixed ? (shape === "16:9" ? "🖥 YouTube 16:9 · " : "📱 Short 9:16 · ") : ""}${clock(clip.end - clip.start)} long` }),
+      el("div", { class: "clip-posting", "aria-live": "polite" }),
       el("div", { class: "clip-actions" },
         el("button", { class: "ghost small", type: "button", text: "✏️ Edit", disabled: live, title: live ? "You can edit after you press Stop" : "", onclick: () => window.ClipEditor.open(job, clip.index) }),
-        el("button", { class: "ghost small", type: "button", text: "📤 Post", onclick: () => window.ClipPosting.schedule(job.id, [clip.index]) }),
+        el("button", { class: "ghost small manual-post", type: "button", text: "📤 Post", onclick: () => window.ClipPosting.schedule(job.id, [clip.index]) }),
         el("a", { class: "primary small", href: clip.url, download: `${clip.index + 1} ${clip.title || "clip"}.mp4`, text: "Download" }))));
     return card;
   }));
+  if (window.ClipPosting) window.ClipPosting.paintOutput();
 }
 async function saveClip(jobId, index, edit) {
   state.phased = false;
@@ -801,8 +824,13 @@ $("#startOver").addEventListener("click", () => {
 /* ---------- boot ---------- */
 window.ClipDesigner.onPick = (t) => { if (t && t.length) setLength(t.length); };
 async function restoreLast() {
+  if (new URLSearchParams(location.search).has("new")) {
+    try { sessionStorage.removeItem("clipstudio.lastJob"); } catch { /* private mode */ }
+    history.replaceState(null, "", "/");
+    return;
+  }
   let last = null;
-  try { last = localStorage.getItem("clipstudio.lastJob"); } catch { /* private mode */ }
+  try { last = sessionStorage.getItem("clipstudio.lastJob") || localStorage.getItem("clipstudio.lastJob"); } catch { /* private mode */ }
   if (!last) return;
   let job;
   try { job = await api(`/api/jobs/${last}`); } catch { return; }

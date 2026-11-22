@@ -118,6 +118,7 @@ class TitleStyle(BaseModel):
 class Design(BaseModel):
     template: str = Field(default="big_captions", max_length=40)
     aspect: Literal["9:16", "16:9", "1:1"] = "9:16"
+    resolution: Literal[720, 1080, 2160] = 1080
     layout: Literal["full", "stack", "corner", "split", "meme"] = "full"
     fill: Literal["blur", "bars", "zoom"] = "zoom"
     cam_roi: list[float] | None = None  # streamer cam inside the source
@@ -505,7 +506,9 @@ def adapt_to_source(design: Design, src_w: int, src_h: int) -> Design:
 def build_filter(design: Design, src_w: int, src_h: int, fps: int = 30):
     """FFmpeg filter_complex drawing the layout; output label is [base]."""
     design = adapt_to_source(design, src_w, src_h)
-    W, H = CANVAS[design.aspect]
+    base_w, base_h = CANVAS[design.aspect]
+    scale = design.resolution / 1080
+    W, H = _even(base_w * scale), _even(base_h * scale)
     layout = effective_layout(design)
     parts = []
     gx, gy, gw, gh = _px(game_region(design), src_w, src_h)

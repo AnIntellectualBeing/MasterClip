@@ -51,7 +51,7 @@ def test_clips_rotate_across_zernio_keys(poster, tmp_path):  # noqa: F811
     clip = tmp_path / "clip.mp4"
     clip.write_bytes(b"fake")
     added = poster.add([{"file": clip, "title": f"c{i}"} for i in range(4)], when="now")
-    assert [a["slot"] for a in added] == [1, 2, 3, 1]
+    assert [a["slot"] for a in added] == [1, 1, 2, 2, 3, 3, 1, 1]  # both targets stay on the clip's key
     poster.toggle_extra_key(2, False)
     assert poster.status()["senders"] == 2
     poster.remove_extra_key(3)

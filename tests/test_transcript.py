@@ -153,6 +153,8 @@ def test_transcribe_reports_segment_progress_and_returns_plain_dicts(
     tmp_path, monkeypatch
 ):
     _load_model.cache_clear()
+    # Keep this progress test independent of a model bundled by a local installer build.
+    monkeypatch.setattr("clipstudio.transcript.bundled_model", lambda _: None)
     monkeypatch.setattr("clipstudio.transcript.extract_audio", _fake_extract_audio)
 
     class Segment:

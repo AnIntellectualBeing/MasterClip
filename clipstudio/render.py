@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from .design import FONTS, Design, build_filter
+from .design import FONTS, CANVAS, Design, build_filter
 from .encoders import is_hardware, mark_broken, video_args
 from .engine import _run
 from .media import MediaError, find_tool, probe_media
@@ -96,6 +96,8 @@ def render_clip(
         last = "subs"
         graph += f";[{'shk' if shouts else 'base'}]ass=filename=captions.ass:fontsdir=fonts[{last}]"
         for n, (png, at, until, x, y, size) in enumerate(emoji):
+            output_scale = W / CANVAS[design.aspect][0]
+            x, y, size = round(x * output_scale), round(y * output_scale), max(2, round(size * output_scale))
             command += ["-loop", "1", "-t", f"{duration:.3f}", "-i", str(png)]
             graph += (
                 f";[{inputs}:v]scale={size}:{size},format=rgba[e{n}]"

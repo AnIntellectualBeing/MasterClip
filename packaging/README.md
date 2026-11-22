@@ -4,8 +4,8 @@
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-Output: `dist\ClipStudioSetup-1.0.0.exe`. It's a per-user install, so no admin prompt. It goes to
-`%LOCALAPPDATA%\Programs\Clip Studio` with a Start menu entry and an optional desktop icon.
+Output: `dist\MasterClipSetup-1.1.0.exe`. It's a per-user install, so no admin prompt. It goes to
+`%LOCALAPPDATA%\Programs\MasterClip` with a Start menu entry and an optional desktop icon. The Start menu also includes MasterClip Help.
 
 ## One-time setup on the build PC
 - `.venv` with `requirements.txt` plus `pyinstaller` (`pip install pyinstaller`).

@@ -1,3 +1,4 @@
+param([string]$PythonPath = "")
 # Builds dist\MasterClipSetup-<version>.exe
 #   powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 # Work files go to %USERPROFILE%\ClipStudioBuild (C: has the room). The vendor folder there must hold
@@ -6,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $Build = Join-Path $env:USERPROFILE "ClipStudioBuild"
 $Vendor = Join-Path $Build "vendor"
-$Python = Join-Path $Root ".venv\Scripts\python.exe"
+$Python = if ($PythonPath) { $PythonPath } else { Join-Path $Root ".venv\Scripts\python.exe" }
 $Iscc = Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"
 if (-not (Test-Path $Iscc)) { $Iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" }
 

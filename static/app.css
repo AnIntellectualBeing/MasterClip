@@ -636,3 +636,16 @@ kbd { font: 700 12px/1 "Segoe UI", system-ui, sans-serif; background: #fff; bord
 .clip { position: relative; }
 .clip-x { position: absolute; top: 8px; right: 8px; z-index: 3; width: 32px; height: 32px; border-radius: 50%; border: 0; background: rgba(0,0,0,.65); color: #fff; font-size: 16px; cursor: pointer; }
 .clip-x:hover { background: #E5322D; }
+
+.post-overview { margin: 12px 0 20px; padding: 16px; background: #fff; border: 1px solid #e4d9d0; border-radius: 16px; }
+.platform-status { display: grid; gap: 8px; margin-top: 10px; }
+.platform-pill, .clip-post-line { display: grid; gap: 5px; border-radius: 10px; padding: 10px 12px; border-left: 4px solid; font-size: 13px; overflow-wrap: anywhere; }
+.platform-pill small, .clip-post-line small { font-size: 12px; line-height: 1.5; }
+.platform-pill.ready, .clip-post-line.ready { color: #17633b; background: #ecf8ef; border-color: #269456; }
+.platform-pill.paused, .clip-post-line.paused, .posting-error { color: #9b3026; background: #fff0ec; border-color: #ce503d; }
+.clip-posting { display: grid; gap: 7px; }
+.clip-post-line button { justify-self: start; font-size: 12px; }
+.format-routing label { display: inline-flex; align-items: center; gap: 8px; }
+.format-routing input[type="checkbox"] { width: auto; min-height: auto; accent-color: var(--brand); }
+.top-actions { flex-wrap: wrap; }
+.pill.retrying { color: #9b3026; background: #fff0ec; }

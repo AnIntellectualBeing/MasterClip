@@ -29,6 +29,15 @@ FULL_FORMAT = "bv*[height<=1080]+ba/b[height<=1080]/b"
 MAX_SECTION_SECONDS = 4 * 3600
 
 
+def download_format(max_height=1080, section=False):
+    height = int(max_height)
+    if height not in (720, 1080, 2160):
+        raise ValueError("Choose HD, Full HD or 4K quality.")
+    # A 4K request must prefer the highest rendition, including DASH when HLS is only 1080p.
+    template = SECTION_FORMAT if section and height <= 1080 else FULL_FORMAT
+    return template.replace("1080", str(height))
+
+
 def ytdlp_command(*extra: str) -> list[str]:
     """One place builds the yt-dlp command (the packaged app swaps this later)."""
     from .paths import ytdlp_base
@@ -449,7 +458,7 @@ def site_name(extractor: str) -> str:
     return extractor
 
 
-def _section_download(url, folder, start, end, cancel_event, progress):
+def _section_download(url, folder, start, end, cancel_event, progress, max_height=1080):
     folder = Path(folder)
     start, end = float(start), float(end)
     if not (math.isfinite(start) and math.isfinite(end)) or start < 0 or end <= start:
@@ -461,7 +470,7 @@ def _section_download(url, folder, start, end, cancel_event, progress):
     run_process(
         ytdlp_command(
             "-f",
-            SECTION_FORMAT,
+            download_format(max_height, section=True),
             "--download-sections",
             f"*{start:.2f}-{end:.2f}",
             "--merge-output-format",
@@ -479,7 +488,7 @@ def _section_download(url, folder, start, end, cancel_event, progress):
 
 
 def import_url(
-    url, folder, capture_seconds, cancel_event, progress, section=None, captions_language=None
+    url, folder, capture_seconds, cancel_event, progress, section=None, captions_language=None, max_height=1080
 ):
     """Fetch a link. VODs: only `section` (start, end) is downloaded when given.
     Live: records `capture_seconds` from now. With `captions_language` ('auto' or a language code),
@@ -510,13 +519,13 @@ def import_url(
             video_url, audio_url, metadata, folder, capture_seconds, cancel_event
         )
     elif section:
-        _section_download(url, folder, section[0], section[1], cancel_event, progress)
+        _section_download(url, folder, section[0], section[1], cancel_event, progress, max_height=max_height)
     else:
         progress(0.05, "Downloading the video")
         run_process(
             ytdlp_command(
                 "-f",
-                FULL_FORMAT,
+                download_format(max_height),
                 "--merge-output-format",
                 "mp4",
                 "--remux-video",
@@ -623,7 +632,7 @@ def _concat(parts, target, cancel_event, folder):
                         "-movflags", "+faststart", str(target)], folder / "concat.log", cancel_event, timeout=7200)
 
 
-def import_hotspots(url, folder, cancel_event, progress):
+def import_hotspots(url, folder, cancel_event, progress, max_height=1080):
     """Download only the hottest parts of a long VOD. Returns (path, title, chat in joined-video
     seconds or None, parts [(vod start, vod end, joined start)])."""
     from concurrent.futures import ThreadPoolExecutor
@@ -665,7 +674,7 @@ def import_hotspots(url, folder, cancel_event, progress):
         out = folder / f"part-{index:02}.mp4"
         try:
             run_process(
-                ytdlp_command("-f", SECTION_FORMAT, "--download-sections", f"*{start:.2f}-{end:.2f}",
+                ytdlp_command("-f", download_format(max_height, section=True), "--download-sections", f"*{start:.2f}-{end:.2f}",
                               "--merge-output-format", "mp4", "--remux-video", "mp4",
                               "-o", str(folder / f"part-{index:02}.%(ext)s"), url),
                 folder / f"import-{index:02}.log", cancel_event, timeout=max(600, int((end - start) * 4)),

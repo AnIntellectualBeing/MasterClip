@@ -21,6 +21,13 @@ def test_written_reads_progress(tmp_path):
     assert rec.written() == pytest.approx(9.5)  # not running, so no safety margin
 
 
+def test_continuous_recorder_has_no_four_hour_stop(tmp_path):
+    recorder = LiveRecorder(["-i", "stream"], "0:a:0?", tmp_path)
+    assert "-t" not in recorder.command()
+    bounded = LiveRecorder(["-i", "stream"], "0:a:0?", tmp_path, max_seconds=120)
+    assert bounded.command()[bounded.command().index("-t") + 1] == "120"
+
+
 @pytest.fixture(scope="module")
 def sample(tmp_path_factory):
     path = tmp_path_factory.mktemp("live") / "sample.mp4"

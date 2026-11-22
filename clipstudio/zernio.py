@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import uuid
+import datetime as dt
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import requests
@@ -18,7 +20,12 @@ PLATFORMS = ("instagram", "youtube")
 
 
 class ZernioError(RuntimeError):
-    pass
+    def __init__(self, message, *, status_code=None, retry_after=None, platform=None, details=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = retry_after
+        self.platform = platform
+        self.details = details or {}
 
 
 def _friendly(response: requests.Response) -> str:
@@ -30,7 +37,7 @@ def _friendly(response: requests.Response) -> str:
     if response.status_code in (401, 403):
         return "Zernio didn't accept that key. Copy it again from zernio.com → Settings → API keys."
     if response.status_code == 429:
-        return "Zernio says slow down (posting limit reached). Try again later."
+        return str(detail) if detail else "Zernio is temporarily limiting requests. Retrying later."
     if response.status_code >= 500:
         return "Zernio is having trouble right now. Try again in a few minutes."
     return f"Zernio said: {detail}" if detail else f"Zernio returned an error ({response.status_code})."
@@ -48,9 +55,25 @@ class Zernio:
         try:
             response = self.http.request(method, f"{self.api}{path}", timeout=timeout, **kwargs)
         except requests.RequestException as error:
-            raise ZernioError("Couldn't reach Zernio. Check your internet connection.") from error
+            raise ZernioError("Couldn't reach Zernio. Retrying when your connection returns.", retry_after=60) from error
         if response.status_code >= 400:
-            raise ZernioError(_friendly(response))
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
+            details = data.get("details") or {}
+            wait = response.headers.get("Retry-After") or details.get("retryAfterSeconds")
+            try:
+                wait = max(1, float(wait)) if wait is not None else None
+            except (TypeError, ValueError):
+                try:
+                    wait = max(1, (parsedate_to_datetime(wait) - dt.datetime.now(dt.timezone.utc)).total_seconds())
+                except (TypeError, ValueError, OverflowError):
+                    wait = None
+            if wait is None and response.status_code >= 500:
+                wait = 120
+            raise ZernioError(_friendly(response), status_code=response.status_code, retry_after=wait,
+                              platform=data.get("platform"), details=details)
         try:
             return response.json()
         except ValueError:
@@ -142,6 +165,9 @@ class Zernio:
     def retry(self, post_id: str) -> dict:
         data = self._call("POST", f"/posts/{post_id}/retry", timeout=300)
         return data.get("post") or data
+
+    def delete_post(self, post_id: str):
+        return self._call("DELETE", f"/posts/{post_id}")
 
     def comment_dm(self, *, profile_id: str, account_id: str, keyword: str, message: str, reply: str, name: str,
                    post_id: str | None = None, platform_post_id: str | None = None) -> dict:
