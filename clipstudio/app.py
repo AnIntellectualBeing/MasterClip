@@ -197,6 +197,8 @@ def auto_post_clip(ident, job, clip):
         item = {"file": path, "title": clip.get("title") or "", "streamer": job.get("channel") or "",
                 "job_id": ident, "index": clip["index"], "kind": clip.get("kind") or "short",
                 "posting_slot": (job.get("recipe") or {}).get("posting_slot", 0)}
+        if clip.get("caption"):
+            item["caption"] = clip["caption"]
         if clip.get("kind") == "long":
             item["only"] = ["youtube"]
         added = poster.add([item], "slots")
@@ -1088,7 +1090,8 @@ def _autosave_live(ident, job, source: Path, clip: dict, mixed: bool) -> str | N
     """Live clipping runs for hours: copy every finished clip into the clips folder straight away,
     so it is on the PC even if the app is closed. A failed copy never stops the recording."""
     try:
-        target = output_folder() / _safe_name(job.get("title") or job.get("channel") or "Live")
+        label = _safe_name(job.get("title") or job.get("channel") or "Live")
+        target = output_folder() / f"{label} - {ident[:8]}"
         target.mkdir(parents=True, exist_ok=True)
         tag = (" (Short)" if clip.get("kind") == "short" else " (YouTube 16x9)") if mixed else ""
         name = f"{clip.get('moment', clip['index']) + 1:02} {_safe_name(clip.get('title') or 'clip')}{tag}.mp4"
@@ -1862,6 +1865,11 @@ def make_long(ident, body: LongRequest):
         (folder / f"{Path(name).stem}-description.txt").write_text(result["description"], encoding="utf-8")
         videos = list(job.get("long_videos") or [])
         videos.append(dict(kind=body.kind, file=name, url=f"/api/jobs/{ident}/files/{name}", title=title, **result))
+        pending = {**videos[-1], "kind": "long", "index": f"long-{len(videos) - 1}", "caption": result["description"]}
+        auto_post_clip(ident, job, pending)
+        for field in ("posting_ids", "posting_note"):
+            if field in pending:
+                videos[-1][field] = pending[field]
         outputs = [o for o in job.get("outputs", []) if o["name"] != name] + [file_output(ident, folder / name, body.kind)]
         store.update(ident, status="complete", progress=1, long_videos=videos, outputs=outputs,
                      message="Your YouTube video is ready")

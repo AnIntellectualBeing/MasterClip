@@ -110,9 +110,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return head + "\n".join(lines) + "\n"
 
 
-def intro_card(source, at: float, output: Path, title: str, subtitle: str, seconds: float = 3.0, cancel_event=None):
+def intro_card(source, at: float, output: Path, title: str, subtitle: str, seconds: float = 3.0, cancel_event=None, resolution=1080):
     """Blurred, darkened gameplay from the first moment with the video title on top."""
     info = probe_media(source)
+    width, height = round(W * resolution / 1080), int(resolution)
     at = max(0.0, min(at, max(0.0, info.duration - seconds)))
     with tempfile.TemporaryDirectory(prefix="clipstudio-intro-") as temp_name:
         temp = Path(temp_name)
@@ -121,7 +122,7 @@ def intro_card(source, at: float, output: Path, title: str, subtitle: str, secon
             shutil.copy2(FONT_DIR / FONTS[name], temp / "fonts" / FONTS[name])
         (temp / "intro.ass").write_text(_intro_ass(title, subtitle, seconds), encoding="utf-8")
         vf = (
-            f"fps=30,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+            f"fps=30,scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},"
             "boxblur=22:2,eq=brightness=-0.18:saturation=1.15,setsar=1,"
             "ass=filename=intro.ass:fontsdir=fonts,format=yuv420p"
         )
@@ -151,7 +152,8 @@ def make_compilation(source, moments: list[Moment], output, design: Design, titl
     try:
         if intro:
             card = work / "00-intro.mkv"
-            intro_card(source, moments[0].start, card, title, f"{len(moments)} moments" if len(moments) > 1 else "", cancel_event=cancel_event)
+            intro_card(source, moments[0].start, card, title, f"{len(moments)} moments" if len(moments) > 1 else "",
+                       cancel_event=cancel_event, resolution=design.resolution)
             parts.append(card)
             at += probe_media(card).duration  # the intro shares chapter 1, which starts at 0:00
         for i, moment in enumerate(moments):

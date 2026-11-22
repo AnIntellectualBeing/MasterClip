@@ -581,6 +581,7 @@ class Poster:
                                       short=item.get("kind") != "long" and is_short(self.folder / item["file"]))
         except (ZernioError, OSError) as error:
             if (getattr(error, "retry_after", None) or getattr(error, "status_code", None) == 429
+                    or any(t in str(error).lower() for t in ("quota", "upload limit", "uploadlimit", "daily limit"))
                     or getattr(error, "status_code", 0) and error.status_code >= 500):
                 self._defer(item, error, accounts)
             else:

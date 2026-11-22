@@ -140,10 +140,13 @@ try:
         page.wait_for_function("window.ClipStudio.state.job.status === 'complete'", timeout=120000)
         second.wait_for_function("window.ClipStudio.state.job.status === 'complete'", timeout=120000)
         assert not errors, errors
+        saved_folders = [module.store.get(ident)["saved_to"] for ident in (first_id, second_id)]
+        assert saved_folders[0] != saved_folders[1]
+        assert all(len(list(Path(folder).glob("*.mp4"))) >= 2 for folder in saved_folders)
         report = dict(first_session=first_id, second_session=second_id,
             first_clips=page.evaluate("window.ClipStudio.state.job.clips.length"),
             second_clips=second.evaluate("window.ClipStudio.state.job.clips.length"),
-            simulated_posts=calls, browser_errors=errors)
+            simulated_posts=calls, browser_errors=errors, saved_folders=saved_folders)
         (OUT / "result.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(json.dumps(report, indent=2), flush=True)
         browser.close()

@@ -361,10 +361,10 @@
     }));
     const warn = (job.warnings || []).filter((w) => /auto-post/i.test(w));
     if (warn.length) $("#platformStatus").append(el("p", { class: "posting-error", text: warn[warn.length - 1] }));
-    $$("#clips [data-clip-index]").forEach((card) => {
-      const index = Number(card.dataset.clipIndex);
+    $$("#clips [data-clip-index], #longVideos [data-clip-index]").forEach((card) => {
+      const index = card.dataset.clipIndex.startsWith("long-") ? card.dataset.clipIndex : Number(card.dataset.clipIndex);
       const posts = rows.filter((i) => i.index === index);
-      const clip = (job.clips || []).find((c) => c.index === index);
+      const clip = typeof index === "string" ? (job.long_videos || [])[Number(index.slice(5))] : (job.clips || []).find((c) => c.index === index);
       const target = $(".clip-posting", card);
       if (!target) return;
       const signature = JSON.stringify(posts.map((p) => [p.id, p.status, p.when, p.retry_at, p.error, p.cancel_requested]));

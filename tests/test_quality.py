@@ -3,6 +3,7 @@ from clipstudio import sources
 import subprocess
 from clipstudio.media import find_tool, probe_media
 from clipstudio.render import render_clip
+from clipstudio.longform import intro_card
 
 
 def test_4k_layout_preserves_source_detail_before_captions():
@@ -35,3 +36,13 @@ def test_real_4k_file_export(tmp_path):
     info = probe_media(output)
     assert (info.width, info.height) == (3840, 2160)
     assert info.duration > 0
+
+
+def test_compilation_intro_matches_selected_output_resolution(tmp_path):
+    source = tmp_path / "source.mp4"
+    subprocess.run([find_tool("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i",
+                    "color=size=640x360:duration=1", "-c:v", "libx264", "-preset", "ultrafast", str(source)], check=True)
+    output = tmp_path / "intro.mkv"
+    intro_card(source, 0, output, "QA", "", seconds=0.4, resolution=720)
+    info = probe_media(output)
+    assert (info.width, info.height) == (1280, 720)

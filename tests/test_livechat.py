@@ -236,7 +236,23 @@ def test_live_clips_are_saved_to_the_pc_as_they_are_made(live_app, monkeypatch, 
     clip_file.write_bytes(b"video")
     clip = dict(index=0, moment=0, kind="short", title="Cops: No no no!")
     saved = live_app._autosave_live(job["id"], {"title": "GTA RP live"}, clip_file, clip, False)
-    assert saved == str(out / "GTA RP live")
-    assert (out / "GTA RP live" / "01 Cops No no no.mp4").read_bytes() == b"video"
+    target = out / f"GTA RP live - {job['id'][:8]}"
+    assert saved == str(target)
+    assert (target / "01 Cops No no no.mp4").read_bytes() == b"video"
     # a copy that fails (disk full, folder gone) never stops the recording
     assert live_app._autosave_live(job["id"], {}, tmp_path / "missing.mp4", clip, False) is None
+
+
+def test_parallel_sessions_with_same_title_do_not_overwrite_saved_clips(live_app, monkeypatch, tmp_path):
+    monkeypatch.setattr(live_app, "output_folder", lambda: tmp_path / "Videos")
+    clip = dict(index=0, moment=0, kind="short", title="Same moment")
+    folders = []
+    for number in (1, 2):
+        job = live_app.store.create("Same stream title")
+        source = tmp_path / f"source-{number}.mp4"
+        source.write_bytes(bytes([number]))
+        folders.append(live_app._autosave_live(job["id"], job, source, clip, False))
+    assert folders[0] != folders[1]
+    from pathlib import Path
+    assert (Path(folders[0]) / "01 Same moment.mp4").read_bytes() == b"\x01"
+    assert (Path(folders[1]) / "01 Same moment.mp4").read_bytes() == b"\x02"

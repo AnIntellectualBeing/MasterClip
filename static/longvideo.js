@@ -67,19 +67,21 @@
     $("#longVideos").replaceChildren(...videos.map((v) => {
       const box = CS().el("textarea", { readonly: true, "aria-label": "YouTube description" });
       box.value = v.description;
-      return CS().el("div", { class: "long-video" },
+      return CS().el("div", { class: "long-video", "data-clip-index": `long-${v.i}` },
         CS().el("video", { src: v.url, controls: true, preload: "metadata", playsinline: true }),
         CS().el("div", { class: "long-meta" },
           CS().el("strong", { text: v.title }),
           CS().el("span", { class: "muted", text: `${v.kind === "full" ? "Full-length" : "Compilation"} · ${CS().clock(v.duration)} · ${v.chapters.length} chapters` }),
           box,
+          CS().el("div", { class: "clip-posting", "aria-live": "polite" }),
           CS().el("div", { class: "long-actions" },
             CS().el("button", { class: "ghost small", type: "button", text: "📋 Copy description", onclick: async () => {
               try { await navigator.clipboard.writeText(v.description); CS().toast("Description copied"); } catch { box.select(); }
             } }),
             CS().el("a", { class: "ghost small", href: v.url, download: `${v.title}.mp4`, text: "Download" }),
-            CS().el("button", { class: "primary small", type: "button", text: "📤 Post to YouTube", onclick: () => postLong(job.id, v.i) }))));
+            CS().el("button", { class: "primary small manual-post", type: "button", text: "📤 Post to YouTube", onclick: () => postLong(job.id, v.i) }))));
     }));
+    if (window.ClipPosting) window.ClipPosting.paintOutput();
   }
 
   function postLong(jobId, index) {

@@ -132,6 +132,14 @@ def test_rate_limit_error_preserves_details_and_retry_after():
     assert caught.value.platform == "youtube"
 
 
+def test_youtube_upload_quota_is_not_reported_as_a_bad_zernio_key():
+    from clipstudio.zernio import _friendly
+    response = requests.Response()
+    response.status_code = 403
+    response._content = json.dumps({"error": "uploadLimitExceeded: YouTube daily upload limit reached", "platform": "youtube"}).encode()
+    assert "uploadLimitExceeded" in _friendly(response)
+
+
 @pytest.fixture
 def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("CLIPSTUDIO_DATA", str(tmp_path))
@@ -154,6 +162,24 @@ def test_manual_mixed_format_queue_routes_long_to_youtube(app_client, monkeypatc
     assert client.post("/api/post/queue", json={"job_id": job["id"]}).status_code == 200
     assert queued[1]["kind"] == "long"
     assert queued[1]["only"] == ["youtube"]
+
+
+def test_finished_compilation_auto_posts_only_to_youtube(app_client, monkeypatch):
+    module, _ = app_client
+    job = module.store.create("Long QA", source_path="qa.mp4", duration=10, candidates=[], recipe={"auto_post": True})
+    (module.store.folder(job["id"]) / "transcript.json").write_text("[]")
+    module.events[job["id"]] = threading.Event()
+    def make_full(source, start, end, segments, output, *args, **kwargs):
+        output.write_bytes(b"qa video")
+        return {"description": "QA long description"}
+    monkeypatch.setattr("clipstudio.longform.make_full", make_full)
+    queued = []
+    monkeypatch.setattr(module.poster, "add", lambda items, *a: queued.extend(items) or [])
+    module.make_long(job["id"], module.LongRequest(kind="full", title="Long QA"))
+    assert len(queued) == 1
+    assert queued[0]["only"] == ["youtube"]
+    assert queued[0]["index"] == "long-0"
+    assert queued[0]["caption"] == "QA long description"
 
 
 def test_auto_post_requires_setup_before_starting(app_client, monkeypatch, tmp_path):

@@ -33,7 +33,10 @@ def _friendly(response: requests.Response) -> str:
         data = response.json()
         detail = data.get("error") or data.get("message") or ""
     except ValueError:
+        data = {}
         detail = ""
+    if detail and (data.get("platform") or any(t in str(detail).lower() for t in ("quota", "upload limit", "uploadlimit"))):
+        return str(detail)
     if response.status_code in (401, 403):
         return "Zernio didn't accept that key. Copy it again from zernio.com → Settings → API keys."
     if response.status_code == 429:
@@ -123,9 +126,10 @@ class Zernio:
             with open(path, "rb") as handle:
                 put = requests.put(presign["uploadUrl"], data=handle, headers={"Content-Type": "video/mp4"}, timeout=900)
         except (KeyError, requests.RequestException) as error:
-            raise ZernioError("The video upload didn't finish. Check your internet and press Retry.") from error
+            raise ZernioError("The video upload didn't finish. Retrying automatically.", retry_after=60) from error
         if put.status_code >= 400:
-            raise ZernioError("The video upload didn't finish. Press Retry.")
+            raise ZernioError("The video upload didn't finish.", status_code=put.status_code,
+                              retry_after=120 if put.status_code == 429 or put.status_code >= 500 else None)
         return presign["publicUrl"]
 
     def create_post(self, *, video_url: str, caption: str, title: str, accounts: dict[str, str],
@@ -155,7 +159,7 @@ class Zernio:
                           headers={"Idempotency-Key": idempotency_key or str(uuid.uuid4())})
         post = data.get("post") or {}
         if not post.get("_id"):
-            raise ZernioError("Zernio didn't confirm the post. Check the Zernio dashboard before retrying.")
+            raise ZernioError("Waiting for Zernio to confirm the post. Retrying with the same post identity.", retry_after=60)
         return post
 
     def get_post(self, post_id: str) -> dict:
