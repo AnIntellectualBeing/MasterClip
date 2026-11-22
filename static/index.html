@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#FBF6EF">
+  <title>MasterClip</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='6' width='26' height='20' rx='6' fill='%23EF6A3E'/%3E%3Cpath d='M13 11.5v9l8-4.5z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/crash.js"></script>
+  <script src="/static/stage.js" defer></script>
+  <script src="/static/editor.js" defer></script>
+  <script src="/static/designer.js" defer></script>
+  <script src="/static/app.js" defer></script>
+  <script src="/static/posting.js" defer></script>
+  <script src="/static/longvideo.js" defer></script>
+  <script src="/static/aiboost.js" defer></script>
+  <script src="/static/licence.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="MasterClip home">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><rect x="3" y="6" width="26" height="20" rx="6" fill="currentColor"/><path d="M13 11.5v9l8-4.5z" fill="#fff"/></svg></span>
+      <span>MasterClip</span>
+    </a>
+    <div class="top-actions">
+      <button id="openLicence" class="ghost licence-chip" type="button" title="Your licence" hidden><span id="licenceChip">Free trial</span></button>
+      <button id="openPosting" class="ghost" type="button" title="Post clips to Instagram and YouTube">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 5h-3v6h-4V8H7zM5 15h2v3h10v-3h2v5H5z"/></svg>
+        Posting <i id="postingDot" class="dot" hidden></i>
+      </button>
+      <button id="openFolder" class="ghost" type="button" title="Open the folder with your saved clips">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        My clips
+      </button>
+    </div>
+  </header>
+
+  <main class="page">
+    <ol class="stepper" aria-label="Steps">
+      <li data-step="1" class="active"><span class="dot">1</span><span class="label">Get video</span></li>
+      <li data-step="2"><span class="dot">2</span><span class="label">Design</span></li>
+      <li data-step="3"><span class="dot">3</span><span class="label">Find hype moments</span></li>
+    </ol>
+
+    <div id="notice" class="notice" role="alert" hidden><span id="noticeText"></span><button id="noticeClose" type="button" aria-label="Close">×</button></div>
+
+    <div id="welcomeBack" class="welcome-back" hidden>
+      <span class="wb-icon" aria-hidden="true">🎬</span>
+      <div class="wb-text"><strong id="wbTitle">Your last clips are ready</strong><span id="wbMeta" class="muted"></span></div>
+      <button id="wbOpen" class="primary" type="button">Open my clips</button>
+      <button id="wbHide" class="ghost small" type="button" aria-label="Hide">✕</button>
+    </div>
+
+    <!-- STEP 1 -->
+    <section id="step1" class="panel" aria-labelledby="step1Title">
+      <div class="panel-head">
+        <h1>What are you making?</h1>
+      </div>
+      <div class="vtypes" role="radiogroup" aria-label="Video type">
+        <button type="button" class="vtype on" role="radio" aria-checked="true" data-kind-pick="short">
+          <span class="vshape" aria-hidden="true"><i class="tall"></i></span>
+          <strong>Short video <b>9:16</b></strong>
+          <small>For YouTube Shorts, Instagram Reels and TikTok</small>
+        </button>
+        <button type="button" class="vtype" role="radio" aria-checked="false" data-kind-pick="long">
+          <span class="vshape" aria-hidden="true"><i class="wide"></i></span>
+          <strong>Long video <b>16:9</b></strong>
+          <small>For YouTube</small>
+        </button>
+        <button type="button" class="vtype" role="radio" aria-checked="false" data-kind-pick="both">
+          <span class="vshape" aria-hidden="true"><i class="tall"></i><i class="wide"></i></span>
+          <strong>Both</strong>
+          <small>Every moment as a Short and as a 16:9 video</small>
+        </button>
+      </div>
+      <div class="postmode" role="radiogroup" aria-label="Posting">
+        <button type="button" class="pmode on" data-postmode="manual"><strong>✋ I'll pick the clips</strong><small>Make clips, then choose which ones to post</small></button>
+        <button type="button" class="pmode" data-postmode="auto"><strong>🤖 Auto-post every clip</strong><small>Each new clip goes out at your daily posting times, non-stop (great with live streams)</small></button>
+      </div>
+      <div class="panel-head second">
+        <h1 id="step1Title">Where's the video?</h1>
+        <p>Find a stream, paste a link, or use a video on your computer.</p>
+      </div>
+      <div class="tabs" role="tablist">
+        <button class="tab active" role="tab" data-tab="find" type="button">🔍 Find streams</button>
+        <button class="tab" role="tab" data-tab="link" type="button">🔗 Paste a link</button>
+        <button class="tab" role="tab" data-tab="file" type="button">📁 My video file</button>
+      </div>
+
+      <div id="tabFind" class="tab-body">
+        <form id="searchForm" class="search">
+          <input id="searchInput" type="search" placeholder="Game or streamer, e.g. GTA 5 RP" autocomplete="off" maxlength="160" aria-label="Search streams">
+          <button class="primary" type="submit">Search</button>
+        </form>
+        <div class="chips" id="quickChips">
+          <button type="button" class="chip">GTA 5 RP</button>
+          <button type="button" class="chip">GTA 6</button>
+          <button type="button" class="chip">IShowSpeed</button>
+          <button type="button" class="chip">Kai Cenat</button>
+          <button type="button" class="chip">Valorant</button>
+          <button type="button" class="chip">Minecraft</button>
+        </div>
+        <div id="searchState" class="soft-state" hidden></div>
+        <div id="siteFilter" class="site-filter" hidden>
+          <div class="seg" role="group" aria-label="Show results from">
+            <button type="button" class="on" data-site="all">All</button>
+            <button type="button" data-site="YouTube">YouTube</button>
+            <button type="button" data-site="Twitch">Twitch</button>
+          </div>
+          <span id="searchNote" class="hint"></span>
+        </div>
+        <div id="results" class="results"></div>
+      </div>
+
+      <div id="tabLink" class="tab-body" hidden>
+        <form id="linkForm" class="search">
+          <input id="linkInput" type="url" placeholder="Paste a YouTube, Twitch or Kick link" autocomplete="off" aria-label="Video link">
+          <button class="primary" type="submit">Open</button>
+        </form>
+        <p class="hint">Works with live streams and past streams (VODs). We only download the part you pick.</p>
+      </div>
+
+      <div id="tabFile" class="tab-body" hidden>
+        <label id="dropZone" class="drop" for="fileInput">
+          <span class="drop-icon" aria-hidden="true">⬆</span>
+          <strong id="fileLabel">Choose a video or drop it here</strong>
+          <small>MP4, MKV, MOV or WEBM · stays on your computer</small>
+          <input id="fileInput" type="file" accept="video/*,.mp4,.mkv,.mov,.webm,.ts" hidden>
+        </label>
+      </div>
+
+      <div id="picked" class="picked" hidden>
+        <div class="picked-top">
+          <img id="pickedThumb" alt="" loading="lazy">
+          <div class="picked-text">
+            <span id="pickedBadge" class="badge"></span>
+            <strong id="pickedTitle"></strong>
+            <span id="pickedMeta" class="muted"></span>
+          </div>
+          <button id="pickedClear" class="ghost small" type="button">Change</button>
+        </div>
+        <div id="rangeBox" class="range-box" hidden>
+          <div class="range-head"><strong>Which part?</strong><span id="rangeLabel" class="muted"></span></div>
+          <div class="range-track">
+            <svg id="heat" viewBox="0 0 1000 60" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div id="rangeFill" class="range-fill"></div>
+            <input id="rangeStart" type="range" min="0" max="1000" step="1" aria-label="Start time">
+            <input id="rangeEnd" type="range" min="0" max="1000" step="1" aria-label="End time">
+          </div>
+          <div class="chips small">
+            <button type="button" class="chip" data-range="whole">⚡ Whole stream: hottest parts</button>
+            <button type="button" class="chip" data-range="hot">🔥 Most replayed 10 min</button>
+            <button type="button" class="chip" data-range="first">First 10 min</button>
+            <button type="button" class="chip" data-range="last">Last 10 min</button>
+          </div>
+          <p class="hint" id="rangeHint">We download only this part, so it's quick.</p>
+        </div>
+        <div id="liveBox" class="range-box" hidden>
+          <div class="range-head"><strong>🔴 It's live! Record for…</strong></div>
+          <div class="seg" id="liveMinutes">
+            <button type="button" data-min="0" class="on">Until I stop</button>
+            <button type="button" data-min="2">2 min</button>
+            <button type="button" data-min="5">5 min</button>
+            <button type="button" data-min="10">10 min</button>
+            <button type="button" data-min="30">30 min</button>
+          </div>
+          <p class="hint" id="liveHint">Recording starts when you press Find hype moments; anything before that isn't recorded (for earlier moments, pick the past broadcast instead). New clips come every 5 minutes, sooner when Twitch chat goes wild or you press ✂ Clip now. Each clip takes a minute or two to make. Stops when you press Stop (or after 4 hours).</p>
+        </div>
+        <div class="row-end"><button id="toStep2" class="primary big" type="button">Next: pick a template →</button></div>
+      </div>
+    </section>
+
+    <!-- STEP 2 -->
+    <section id="step2" class="panel wide-panel" hidden aria-labelledby="step2Title">
+      <div class="panel-head head-row">
+        <div>
+          <h1 id="step2Title">Design your clips</h1>
+          <p>Pick a template, then drag anything on the preview to move it. Drag a corner to resize.</p>
+        </div>
+        <div class="seg kind-seg" role="radiogroup" aria-label="Video type">
+          <button type="button" data-kind-pick="short" role="radio">📱 Short</button>
+          <button type="button" data-kind-pick="long" role="radio">🖥 Long</button>
+          <button type="button" data-kind-pick="both" role="radio">Both</button>
+        </div>
+      </div>
+      <div id="tplRows" class="tpl-rows"></div>
+      <div class="designer">
+        <div class="designer-preview">
+          <div id="stages" class="stages"></div>
+          <p class="hint center">Lines appear when things line up. Hold <kbd>Alt</kbd> to move freely, or click a part and use the arrow keys.</p>
+        </div>
+        <aside class="cap-panel" aria-labelledby="capTitle">
+          <div class="cap-head"><h2 id="capTitle">Captions</h2><span id="capFor" class="muted"></span></div>
+          <div class="cap-presets" id="capPresets">
+            <button type="button" data-preset="pop1"><span class="demo pop">WOW</span><small>One-word pop</small></button>
+            <button type="button" data-preset="karaoke"><span class="demo kara">so <b>fun</b> bro</span><small>Karaoke</small></button>
+            <button type="button" data-preset="twoline"><span class="demo two">two short<br>lines</span><small>2-line</small></button>
+            <button type="button" data-preset="boxed"><span class="demo boxed">in a box</span><small>Boxed</small></button>
+            <button type="button" data-preset="punch"><span class="demo punch">I <b>CAN'T</b> DO IT</span><small>Bold + red word</small></button>
+            <button type="button" data-preset="twotone"><span class="demo twotone"><span>NAH, <b>SEE</b></span><br><i>FEEL BAD</i></span><small>Two colours</small></button>
+            <button type="button" data-preset="off"><span class="demo off">—</span><small>Off</small></button>
+          </div>
+          <div id="capFields" class="cap-fields">
+            <div class="field" id="capWordsRow"><span>Words at a time</span>
+              <div class="stepper-num"><button type="button" id="capWordsMinus" aria-label="Fewer words">−</button><span id="capWords">2</span><button type="button" id="capWordsPlus" aria-label="More words">+</button></div>
+            </div>
+            <div class="field"><span>Font</span><div id="capFonts" class="font-grid"></div></div>
+            <label class="field"><span>Size <b id="capSizeVal"></b></span><input id="capSize" type="range" min="24" max="160" step="1"></label>
+            <div class="field"><span>Colour</span><div class="swatches" id="capColor"></div></div>
+            <div class="field" id="capHiRow"><span id="capHiLabel">Spoken word colour</span><div class="swatches" id="capHi"></div></div>
+            <div class="field" id="capSecondRow" hidden><span>Second line colour</span><div class="swatches" id="capSecond"></div></div>
+            <label class="field"><span>Outline <b id="capOutlineVal"></b></span><input id="capOutline" type="range" min="0" max="16" step="1"></label>
+            <div class="field"><span>Position</span>
+              <div class="seg" id="capPos"><button type="button" data-pos="top">Top</button><button type="button" data-pos="middle">Middle</button><button type="button" data-pos="bottom">Bottom</button></div>
+            </div>
+            <div class="switch-row">
+              <label class="switch"><input id="capUpper" type="checkbox"><span></span> UPPERCASE</label>
+              <label class="switch"><input id="capEmoji" type="checkbox"><span></span> Emoji 😂</label>
+            </div>
+          </div>
+          <div class="cap-extra">
+            <div class="fx-box">
+              <h3 class="fx-title">On the video</h3>
+              <div class="field"><span>Title on top</span>
+                <div class="seg" id="fxTitle"><button type="button" data-v="0">Whole clip</button><button type="button" data-v="3">First 3 s</button><button type="button" data-v="off">✕ Remove title</button></div>
+              </div>
+              <p class="hint">The title is written for each clip. Change its words on any clip with ✏️ Edit, or right on the clip card.</p>
+              <div class="switch-row col">
+                <label class="switch"><input id="fxCredit" type="checkbox"><span></span> Streamer name (@name) at the bottom</label>
+                <label class="switch"><input id="fxShout" type="checkbox"><span></span> 💥 Shout effect: big word + shake when someone yells</label>
+                <label class="switch"><input id="fxSfx" type="checkbox"><span></span> 🔊 Boom sound with the shout effect</label>
+              </div>
+            </div>
+            <label class="field"><span>Spoken language</span><select id="language" aria-label="Spoken language">
+              <option value="auto">Find it for me</option><option value="hi">Hindi / Hinglish</option><option value="en">English</option>
+              <option value="kn">Kannada</option><option value="ta">Tamil</option><option value="te">Telugu</option><option value="ml">Malayalam</option>
+              <option value="mr">Marathi</option><option value="bn">Bengali</option><option value="gu">Gujarati</option><option value="pa">Punjabi</option>
+              <option value="ur">Urdu</option><option value="es">Spanish</option><option value="pt">Portuguese</option><option value="fr">French</option>
+              <option value="de">German</option><option value="ar">Arabic</option><option value="ru">Russian</option><option value="id">Indonesian</option>
+              <option value="tr">Turkish</option><option value="ja">Japanese</option><option value="ko">Korean</option></select></label>
+            <label class="field"><span>Captions in</span><select id="captionsIn" aria-label="Caption language">
+              <option value="roman">Hinglish for Hindi (English letters)</option><option value="spoken">The language they speak (Hindi letters)</option><option value="en">English (translated)</option></select></label>
+            <p class="hint" id="langHint">Hindi and other Indian languages use a better speech model that downloads once (about 480 MB).</p>
+          </div>
+        </aside>
+      </div>
+      <div class="settings">
+        <div class="setting">
+          <span class="setting-label">Clip length</span>
+          <div class="seg" id="lengthSeg">
+            <button type="button" data-len="15">15 s</button>
+            <button type="button" data-len="30" class="on">30 s</button>
+            <button type="button" data-len="45">45 s</button>
+            <button type="button" data-len="60">60 s</button>
+            <button type="button" data-len="custom">Custom</button>
+          </div>
+          <input id="customLength" class="num" type="number" min="5" max="180" value="20" hidden aria-label="Custom length in seconds">
+        </div>
+        <div class="setting">
+          <span class="setting-label">How many clips</span>
+          <div class="stepper-num"><button type="button" id="countMinus" aria-label="Fewer">−</button><span id="countValue">3</span><button type="button" id="countPlus" aria-label="More">+</button></div>
+        </div>
+        <div class="setting ai-setting">
+          <span class="setting-label">✨ AI boost <small class="muted">(optional: better moments + funnier titles)</small></span>
+          <div class="seg" id="aiMode">
+            <button type="button" data-v="off" class="on">Off</button>
+            <button type="button" data-v="claude">Claude app</button>
+            <button type="button" data-v="codex">Codex app</button>
+            <button type="button" data-v="gemini">Gemini app</button>
+            <button type="button" data-v="api">Claude key</button>
+            <button type="button" data-v="gemini_api">Gemini key (free)</button>
+            <button type="button" data-v="local">Local AI (Ollama, free)</button>
+          </div>
+          <form id="aiKeyForm" class="search ai-key" hidden>
+            <input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-… (from console.anthropic.com)" aria-label="API key">
+            <button class="primary" type="submit">Save</button>
+          </form>
+          <div class="ai-row"><span id="aiState" class="muted">Off: everything stays on this PC.</span><button id="aiTest" class="ghost small" type="button" hidden>Test</button></div>
+        </div>
+      </div>
+      <div class="row-between">
+        <button class="ghost" type="button" data-go="1">← Back</button>
+        <button id="toStep3" class="primary big" type="button">Next →</button>
+      </div>
+    </section>
+
+    <!-- STEP 3 -->
+    <section id="step3" class="panel" hidden aria-labelledby="step3Title">
+      <div class="panel-head">
+        <h1 id="step3Title">Find hype moments</h1>
+        <p id="summary" class="muted"></p>
+        <button class="ghost small" type="button" data-go="2">← Back</button>
+      </div>
+      <div id="payBox" class="pay-box" hidden>
+        <strong>Your free videos are used up.</strong>
+        <span>Enter your licence key to keep making clips. Nothing was lost: your settings are still here.</span>
+        <button id="payOpen" class="primary" type="button">Enter my key</button>
+      </div>
+      <div id="restyleBox" class="restyle" hidden>
+        <button id="restyleBtn" class="primary big" type="button">🎨 Put the new design on these clips</button>
+        <span class="muted">Same moments and titles, new look. Or find new moments with the button below.</span>
+      </div>
+      <div id="makeBox" class="make">
+        <button id="makeClips" class="primary huge" type="button">🔥 Find hype moments</button>
+      </div>
+      <div id="working" class="working" hidden>
+        <div class="working-art" aria-hidden="true"><span></span><span></span><span></span></div>
+        <strong id="workMessage">Getting things ready…</strong>
+        <small id="workDetail" class="muted"></small>
+        <ol id="workSteps" class="work-steps" aria-label="Steps">
+          <li data-s="0">Getting the video</li><li data-s="1">Listening to what's said</li><li data-s="2">Finding hype moments</li><li data-s="3">Making your clips</li>
+        </ol>
+        <div class="bar"><span id="workBar"></span></div>
+        <small id="workPercent" class="muted">0%</small>
+        <small id="workTime" class="muted"></small>
+        <div id="workClips" class="work-clips" hidden></div>
+        <button id="cancelJob" class="ghost small" type="button">Cancel</button>
+      </div>
+      <div id="failed" class="soft-state bad" hidden></div>
+      <div id="done" hidden>
+        <div id="liveBar" class="live-bar" hidden>
+          <span class="live-dot" aria-hidden="true"></span>
+          <div class="live-text"><strong id="liveTitle">Recording live</strong><span id="liveMeta" class="muted"></span>
+            <span id="liveHype" class="live-hype" hidden><span class="hype-track" aria-hidden="true"><span id="hypeFill"></span></span><span id="hypeText"></span></span></div>
+          <button id="liveClip" class="ghost" type="button" title="Make a clip of what just happened">✂ Clip now</button>
+          <button id="liveFolder" class="ghost" type="button" title="Every clip is saved here as soon as it's made" hidden>📁 Open folder</button>
+          <button id="liveStop" class="danger" type="button">■ Stop</button>
+        </div>
+        <div class="row-between done-head">
+          <strong id="doneTitle">Your clips are ready 🎉</strong>
+          <div class="row-gap">
+            <button id="postAll" class="primary" type="button">📤 Post / schedule all</button>
+            <button id="changeDesign" class="ghost" type="button" title="Go back, change the look, then come back and apply it">🎨 Change design</button>
+            <button id="saveAll" class="ghost" type="button">💾 Save all to my Videos</button>
+            <button id="startOver" class="ghost" type="button">Start a new video</button>
+          </div>
+        </div>
+        <p id="aiNote" class="ai-note" hidden></p>
+        <div id="clips" class="clips"></div>
+        <div class="long-box" id="longBox">
+          <div class="long-head">
+            <div>
+              <h3>Make a YouTube video</h3>
+              <p class="muted">One long 16:9 video with chapters, ready for YouTube.</p>
+            </div>
+          </div>
+          <div class="long-kinds" id="longKind">
+            <button type="button" class="long-kind on" data-v="compilation"><strong>🏆 Best moments compilation</strong><small>Intro, then the best moments with a title on each and chapters.</small></button>
+            <button type="button" class="long-kind" data-v="full"><strong>🎬 Full-length video</strong><small>The whole part you picked, with captions and chapters.</small></button>
+          </div>
+          <div class="settings-grid" id="longCompOpts">
+            <div class="field"><span>Moments</span><div class="seg" id="longMoments"><button type="button" data-v="clips" class="on">Use my clips</button><button type="button" data-v="best">Find the best</button></div></div>
+            <div class="field" id="longCountField" hidden><span>How many <b id="longCountVal">10</b></span><input type="range" id="longCount" min="3" max="30" value="10"></div>
+            <div class="field" id="longLenField" hidden><span>Each moment</span><div class="seg" id="longLen"><button type="button" data-v="20">20 s</button><button type="button" data-v="30">30 s</button><button type="button" data-v="45" class="on">45 s</button><button type="button" data-v="60">60 s</button></div></div>
+            <div class="field"><span>Order</span><div class="seg" id="longOrder"><button type="button" data-v="time" class="on">As it happened</button><button type="button" data-v="countdown">Countdown (best last)</button></div></div>
+          </div>
+          <div class="settings-grid">
+            <label class="field wide"><span>Video title</span><input type="text" id="longTitle" maxlength="100" placeholder="Best moments"></label>
+            <div class="field row-gap">
+              <label class="switch"><input id="longCaptions" type="checkbox" checked><span></span> Captions</label>
+              <label class="switch" id="longIntroWrap"><input id="longIntro" type="checkbox" checked><span></span> Intro card</label>
+            </div>
+          </div>
+          <div class="row-between"><span class="muted" id="longHint"></span><button id="makeLong" class="primary big" type="button">Make YouTube video</button></div>
+          <div id="longVideos" class="long-videos"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- EDITOR -->
+  <div id="editor" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+    <div class="editor-shell">
+      <header class="editor-top">
+        <strong id="editorTitle">Edit clip</strong>
+        <div class="row-gap">
+          <button id="editorCancel" class="ghost" type="button">Cancel</button>
+          <button id="editorSave" class="primary" type="button">Save changes</button>
+        </div>
+      </header>
+      <div class="editor-body">
+        <div class="stage-col">
+          <div id="stageHost" class="stage-host editor-stage"></div>
+          <div class="play-row">
+            <button id="playBtn" class="round" type="button" aria-label="Play">▶</button>
+            <span id="timeLabel" class="muted">0:00</span>
+          </div>
+          <div class="trim">
+            <div class="range-head"><strong>Trim</strong><span id="trimLabel" class="muted"></span></div>
+            <div class="range-track slim">
+              <div id="trimFill" class="range-fill"></div>
+              <input id="trimStart" type="range" step="0.1" aria-label="Clip start">
+              <input id="trimEnd" type="range" step="0.1" aria-label="Clip end">
+            </div>
+          </div>
+        </div>
+        <div class="side">
+          <div class="tabs small" role="tablist">
+            <button class="tab active" data-etab="layout" type="button">Layout</button>
+            <button class="tab" data-etab="captions" type="button">Captions</button>
+            <button class="tab" data-etab="title" type="button">Title</button>
+          </div>
+          <div class="etab" id="etab-layout">
+            <label class="field"><span>Template</span><select id="eTemplate"></select></label>
+            <div class="field"><span>Empty space</span>
+              <div class="seg" id="eFill"><button data-v="zoom" type="button">Zoom in</button><button data-v="blur" type="button">Blurred</button><button data-v="bars" type="button">Black bars</button></div>
+            </div>
+            <div class="field" id="eCamField"><span>Streamer cam</span>
+              <div class="seg" id="eCamPos"><button data-v="keep" type="button" title="Leave the cam where it is in the stream">As in stream</button><button data-v="top" type="button">Top</button><button data-v="bottom" type="button">Bottom</button><button data-v="corner" type="button" title="A box you can drag anywhere on the preview">Box (drag it)</button><button data-v="hidden" type="button" title="Blur the streamer's cam out of the picture">Remove</button></div>
+              <p class="hint" id="camHint"></p>
+              <button id="drawCam" class="ghost small" type="button">✏️ Draw the cam box myself</button>
+            </div>
+            <label class="field" id="eSplitField"><span>Cam size <b id="eSplitVal"></b></span><input id="eSplit" type="range" min="0.2" max="0.7" step="0.01"></label>
+            <label class="field" id="eFocusField"><span>Gameplay left ↔ right</span><input id="eFocus" type="range" min="0" max="1" step="0.01"></label>
+          </div>
+          <div class="etab" id="etab-captions" hidden>
+            <div class="field"><span>Style</span>
+              <div class="seg wrap" id="eCapStyle"><button data-v="pop" type="button">Pop</button><button data-v="karaoke" type="button">Karaoke</button><button data-v="twoline" type="button">2-line</button><button data-v="classic" type="button">Classic</button><button data-v="boxed" type="button">Boxed</button><button data-v="none" type="button">None</button></div>
+            </div>
+            <div class="field"><span>Font</span><div id="eFonts" class="font-list"></div></div>
+            <label class="field"><span>Size <b id="eCapSizeVal"></b></span><input id="eCapSize" type="range" min="24" max="160" step="1"></label>
+            <div class="field"><span>Colour</span><div class="swatches" id="eCapColor"></div></div>
+            <div class="field"><span>Highlight</span><div class="swatches" id="eCapHi"></div></div>
+            <label class="field"><span>Outline <b id="eOutlineVal"></b></span><input id="eOutline" type="range" min="0" max="16" step="1"></label>
+            <div class="field"><span>Position</span>
+              <div class="seg" id="eCapPos"><button data-v="0.18" type="button">Top</button><button data-v="0.5" type="button">Middle</button><button data-v="0.78" type="button">Bottom</button></div>
+              <p class="hint">Or drag the caption on the preview.</p>
+            </div>
+            <label class="switch"><input id="eUpper" type="checkbox"><span></span> UPPERCASE</label>
+            <label class="switch"><input id="eEmoji" type="checkbox"><span></span> Emoji 😂</label>
+          </div>
+          <div class="etab" id="etab-title" hidden>
+            <label class="field"><span>Title on the clip</span><input id="eTitle" type="text" maxlength="140" placeholder="e.g. Speed finally finishes GTA"></label>
+            <div class="chips small" id="eSuggest"></div>
+            <div class="field"><span>Title style</span>
+              <div class="seg wrap" id="eTitleStyle"><button data-v="white_box" type="button">White box</button><button data-v="red_box" type="button">Red box</button><button data-v="yellow" type="button">Yellow</button><button data-v="outline" type="button">Outline</button><button data-v="meme" type="button">Meme</button></div>
+            </div>
+            <label class="field"><span>Size <b id="eTitleSizeVal"></b></span><input id="eTitleSize" type="range" min="36" max="140" step="1"></label>
+            <div class="field"><span>Show it</span>
+              <div class="seg" id="eTitleTime"><button data-v="3" type="button">First 3 s</button><button data-v="6" type="button">First 6 s</button><button data-v="0" type="button">Whole clip</button></div>
+            </div>
+            <label class="switch"><input id="eTitleShow" type="checkbox"><span></span> Show the title</label>
+            <label class="switch"><input id="eCredit" type="checkbox"><span></span> Show credit <b id="eCreditName"></b></label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="camPicker" class="cam-picker" hidden>
+      <div class="cam-picker-card">
+        <strong>Drag a box over the streamer's face cam</strong>
+        <div class="cam-picker-stage"><canvas id="camCanvas"></canvas><div id="camDraw" class="drag-box draw"></div></div>
+        <div class="row-end row-gap"><button id="camCancel" class="ghost" type="button">Cancel</button><button id="camDone" class="primary" type="button">Use this box</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POSTING -->
+  <div id="schedDlg" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="schedTitle">
+    <div class="editor-shell sched-shell">
+      <header class="editor-top">
+        <strong id="schedTitle">When should it go out?</strong>
+        <button id="schedClose" class="ghost" type="button" aria-label="Close">✕</button>
+      </header>
+      <div class="sched-body">
+        <p id="schedWhat" class="muted"></p>
+        <label class="sched-pick"><input type="radio" name="schedWhen" value="now"><span><strong>Post now</strong><small>Uploads straight away. It's live in a minute or two.</small></span></label>
+        <label class="sched-pick"><input type="radio" name="schedWhen" value="at"><span><strong>At a time I pick</strong><small id="schedAtHint">Pick the day and time below.</small></span></label>
+        <div id="schedAtBox" class="sched-at">
+          <input type="datetime-local" id="schedAt" step="60" aria-label="Date and time">
+          <label id="schedGapRow" class="sched-gap">then one every
+            <select id="schedGap" aria-label="Time between clips"><option value="15">15 min</option><option value="30">30 min</option><option value="60" selected>1 hour</option><option value="120">2 hours</option><option value="240">4 hours</option><option value="1440">1 day</option></select>
+          </label>
+        </div>
+        <label class="sched-pick"><input type="radio" name="schedWhen" value="slots"><span><strong>My daily times</strong><small id="schedSlots">The times set in Posting → Settings.</small></span></label>
+        <p id="schedNote" class="hint"></p>
+        <div class="row-between">
+          <button id="schedCancel" class="ghost" type="button">Cancel</button>
+          <button id="schedGo" class="primary big" type="button">Schedule</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="licence" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="licenceTitle">
+    <div class="editor-shell licence-shell">
+      <header class="editor-top">
+        <strong id="licenceTitle">Your licence</strong>
+        <button id="licenceClose" class="ghost" type="button" aria-label="Close">✕</button>
+      </header>
+      <div class="licence-body">
+        <p id="licenceWhy" class="notice-soft" hidden></p>
+        <div id="licenceTrial">
+          <p class="lead-small"><strong id="licenceLeft">3 free videos left.</strong> <span id="licenceLead">After that, one licence keeps MasterClip working on up to 2 PCs. No subscription.</span></p>
+          <form id="licenceForm" class="search">
+            <input id="licenceKey" type="text" autocomplete="off" spellcheck="false" placeholder="CS1-XXXXX-XXXXX-…" aria-label="Licence key">
+            <button class="primary" type="submit">Activate</button>
+          </form>
+          <p id="licenceMsg" class="hint"></p>
+          <a id="licenceBuy" class="primary big buy" href="#" target="_blank" rel="noopener" hidden>Buy a licence</a>
+          <p id="licenceBuyNote" class="hint" hidden>Opens our secure Razorpay page in your browser (UPI, cards, net banking). Your key shows there right after paying.</p>
+          <p id="licenceLost" class="hint" hidden>Bought already but lost your key? <a id="licenceRecover" href="#" target="_blank" rel="noopener">Get it again</a></p>
+        </div>
+        <div id="licenceOk" hidden>
+          <p class="lead-small"><span class="tick on">✓</span> <strong>Licensed.</strong> Thanks for buying MasterClip!</p>
+          <p class="hint">Order <b id="licenceOrder"></b>. Works on up to <span id="licenceSeats">2</span> PCs.</p>
+          <button id="licenceRemove" class="ghost small" type="button">Remove the key from this PC</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="posting" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="postingTitle">
+    <div class="editor-shell posting-shell">
+      <header class="editor-top">
+        <strong id="postingTitle">Posting</strong>
+        <div class="row-gap">
+          <div class="tabs small-tabs" role="tablist">
+            <button class="tab active" type="button" data-ptab="setup">Setup</button>
+            <button class="tab" type="button" data-ptab="queue">Queue <b id="queueCount"></b></button>
+          </div>
+          <button id="postingClose" class="ghost" type="button" aria-label="Close">✕</button>
+        </div>
+      </header>
+      <div class="posting-body">
+        <div id="ptab-setup" class="ptab">
+          <section class="pstep" id="pstep1">
+            <div class="pstep-head"><span class="pnum">1</span><div><h3>Your Zernio key</h3><p class="muted">Zernio posts to Instagram and YouTube for you, even when MasterClip is closed. Your first 2 accounts are free.</p></div><span class="tick" id="tick1" hidden>✓</span></div>
+            <div id="keyEmpty">
+              <ol class="howto">
+                <li>Make a free account at <a href="https://zernio.com" target="_blank" rel="noopener">zernio.com</a></li>
+                <li>Open <b>Settings → API keys</b> and press <b>Create key</b></li>
+                <li>Copy the key and paste it here</li>
+              </ol>
+              <form id="keyForm" class="search">
+                <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Zernio key" aria-label="Zernio key">
+                <button class="primary" type="submit" id="keyTest">Test &amp; save</button>
+              </form>
+              <p class="muted small-print">🔒 Kept in Windows Credential Manager on this PC. MasterClip only ever sends it to Zernio.</p>
+            </div>
+            <div id="keySet" class="good-row" hidden>
+              <span>✅ Key works <b id="keyHint"></b></span>
+              <button id="keyRemove" class="ghost small" type="button">Remove key</button>
+            </div>
+          </section>
+
+          <section class="pstep" id="pstep2">
+            <div class="pstep-head"><span class="pnum">2</span><div><h3>Connect your accounts</h3><p class="muted">Sign in once: your browser opens, you approve, then come back here.</p></div><span class="tick" id="tick2" hidden>✓</span></div>
+            <div class="acct-list">
+              <div class="acct" data-platform="instagram">
+                <span class="acct-logo ig">IG</span>
+                <div class="acct-text"><strong>Instagram</strong><select class="acct-pick" hidden aria-label="Instagram account"></select><span class="acct-state muted">Not connected</span></div>
+                <button class="primary small acct-connect" type="button">Connect</button>
+              </div>
+              <div class="acct" data-platform="youtube">
+                <span class="acct-logo yt">▶</span>
+                <div class="acct-text"><strong>YouTube</strong><select class="acct-pick" hidden aria-label="YouTube channel"></select><span class="acct-state muted">Not connected</span></div>
+                <button class="primary small acct-connect" type="button">Connect</button>
+              </div>
+            </div>
+            <div><button id="acctRefresh" class="ghost small" type="button">↻ Done connecting? Check again</button></div>
+            <div class="more-keys">
+              <div class="pstep-head"><div><h3>🔁 More accounts (up to 30)</h3><p class="muted">Have more Zernio accounts? Add each one's key. Clips then take turns: clip 1 → account 1, clip 2 → account 2, and so on.</p></div></div>
+              <label class="switch"><input id="rotateOn" type="checkbox"><span></span> Spread my clips across all these accounts</label>
+              <ul id="extraKeys" class="extra-keys"></ul>
+              <div class="key-row">
+                <input id="extraKey" type="password" placeholder="Paste another Zernio key" autocomplete="off" aria-label="Another Zernio key">
+                <input id="extraLabel" type="text" placeholder="Name (optional)" maxlength="40" aria-label="Name for this account">
+                <button id="extraAdd" class="primary small" type="button">+ Add</button>
+              </div>
+              <p class="hint" id="extraCount"></p>
+            </div>
+          </section>
+
+          <section class="pstep" id="pstep3">
+            <div class="pstep-head"><span class="pnum">3</span><div><h3>When and what to post</h3><p class="muted">Clips go out at these times, one per time slot.</p></div></div>
+            <div class="settings-grid">
+              <div class="field"><span>Uploads per day</span><div class="seg" id="perDay"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button></div></div>
+              <label class="field"><span>Time zone</span><select id="tz"></select></label>
+              <div class="field wide"><span>Times</span><div id="slots" class="slot-row"></div></div>
+              <label class="field wide"><span>Caption <b>use {title} {hashtags} {streamer}</b></span><textarea id="captionTpl" rows="3"></textarea></label>
+              <label class="field wide"><span>Hashtags</span><input id="hashtags" type="text"></label>
+              <div class="field wide"><span>Preview</span><pre id="captionPreview" class="caption-preview"></pre></div>
+            </div>
+            <div class="dm-box">
+              <label class="switch"><input id="dmOn" type="checkbox"><span></span> Auto-DM on Instagram</label>
+              <p class="muted small-print">When someone comments the keyword on your reel, they get your message in their DMs automatically.</p>
+              <div class="settings-grid" id="dmFields">
+                <label class="field"><span>Keyword</span><input id="dmKeyword" type="text" maxlength="30"></label>
+                <label class="field"><span>Public reply</span><input id="dmReply" type="text" maxlength="200"></label>
+                <label class="field wide"><span>DM message <b>put your link here</b></span><textarea id="dmMessage" rows="2" maxlength="900"></textarea></label>
+              </div>
+            </div>
+            <div class="row-between"><span id="saveState" class="muted"></span><button id="postSave" class="primary big" type="button">Save</button></div>
+          </section>
+        </div>
+        <div id="ptab-queue" class="ptab" hidden>
+          <div class="row-between"><p class="muted" id="queueHint">Clips you schedule show up here.</p><button id="queueRefresh" class="ghost small" type="button">↻ Refresh</button></div>
+          <div id="queueList" class="queue-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

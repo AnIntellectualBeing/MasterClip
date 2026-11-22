@@ -1,0 +1,30 @@
+Clip Studio includes these separate programs and files. Each keeps its own licence.
+
+FFmpeg (ffmpeg.exe, ffprobe.exe) - GNU General Public License v3 (this build includes libx264).
+  Clip Studio runs FFmpeg as a separate program. Licence text: FFMPEG-LICENSE.txt in this folder.
+  Source code for this build: https://www.gyan.dev/ffmpeg/builds/ and https://github.com/FFmpeg/FFmpeg
+  You can also ask the seller for a copy of the source on request.
+
+Deno (deno.exe) - MIT licence. https://github.com/denoland/deno
+  Used by yt-dlp to read YouTube pages.
+
+yt-dlp - The Unlicense (public domain). https://github.com/yt-dlp/yt-dlp
+
+faster-whisper, CTranslate2 - MIT licence. Speech models are downloaded on first use from Hugging Face
+  (Systran/faster-whisper, MIT licence).
+
+OpenCV - Apache License 2.0. YuNet face detector model - Apache License 2.0 / MIT (see models\ATTRIBUTION.md
+  inside the app folder).
+
+Fonts (Anton, Archivo Black, Bangers, Bebas Neue, Lilita One, Luckiest Guy, Permanent Marker, Poppins) -
+  SIL Open Font License 1.1 or Apache License 2.0. See fonts\OFL.txt and fonts\Apache-2.0.txt inside the app folder.
+
+pywebview (BSD), FastAPI (MIT), Uvicorn (BSD), NumPy (BSD), keyring (MIT), Anthropic Python SDK (MIT),
+Python (PSF licence).
+
+Twemoji (emoji pictures for the Emoji caption switch) - Copyright 2019 Twitter, Inc and other contributors,
+  graphics licensed under CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/). https://github.com/jdecked/twemoji
+
+Grand Theft Auto 6 Clips Kitty Plugin (ColinGPT9) - MIT licence. Some GTA event phrase patterns in the
+  moment picker are adapted from it. Licence text: CLIPSKITTY-PLUGIN-LICENSE.txt in this folder.
+  https://github.com/ColinGPT9/Grand-Theft-Auto-6-Clips-Kitty-Plugin

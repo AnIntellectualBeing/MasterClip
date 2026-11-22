@@ -1,0 +1,56 @@
+# MasterClip
+
+**Turn any stream into viral Shorts on your own Windows PC. No AI key, no subscription, no watermark.**
+
+Paste a stream link (or search for one), pick a template, and MasterClip finds the hype moments, cuts them into
+vertical Shorts with the streamer's cam on top and gameplay below, adds word-by-word captions and a title, and can
+post them to Instagram Reels and YouTube Shorts for you.
+
+Get the ready-to-run Windows installer at **[anintellectualcompany.com/software/MasterClip-Tool](https://anintellectualcompany.com/software/MasterClip-Tool/)**.
+
+## What it does
+
+- **3 easy steps:** Get video → Design → Find hype moments. Jump back and forth between steps any time.
+- **Finds the hype for you:** loud reactions, chat spikes (Twitch chat replay), YouTube "most replayed" and
+  what was said. Works fully offline with no AI.
+- **Whole 9-hour streams, fast:** it reads the whole stream's replay and chat data without downloading the video,
+  then downloads only the hottest few minutes.
+- **Live streams:** keep clipping while the streamer is live, with a "Clip now" button and chat-spike clips.
+- **Captions that pop:** one-word pop, karaoke, two-line, boxed, bold + red word, two colours with 3D shadow (words
+  appear one by one). Hinglish for Hindi streams (Hindi in English letters), plus Kannada, Tamil, Telugu and more.
+- **Streamer cam:** found automatically and put on top. With no cam, the Short becomes full gameplay. The gameplay is
+  always centred on the action.
+- **Viral templates:** streamer top + gameplay, reaction corner cam, podcast split, meme top bar, full gameplay.
+  Drag and resize everything on the live preview. Save your own templates.
+- **Auto-post:** post through your Zernio account to Instagram and YouTube (vertical clips go up as Shorts). Pick
+  "Post now", your own time, or daily time slots. Add up to 30 Zernio accounts and clips take turns across them.
+  Turn on **Auto-post every clip** on the first screen and new clips go out by themselves.
+- **Optional AI boost:** better picks and titles with Claude, Codex, Gemini (free) or **Local AI with Ollama** (free,
+  private, fast on a graphics card). Speech runs on an NVIDIA GPU automatically when one is available.
+- **Your keys stay yours:** keys are stored in Windows Credential Manager, never in files, never sent to us.
+
+## Run from source
+
+Requirements: Windows 10/11, Python 3.11+, FFmpeg (with `ffprobe`) on PATH.
+
+```bat
+Setup.cmd    :: once: creates the virtual environment and installs requirements
+Start.cmd    :: opens MasterClip
+```
+
+Run the tests with `python -m pytest -q`. Build the installer with `packaging\build.ps1` (needs Inno Setup 6).
+
+## Project layout
+
+| Folder | What's inside |
+|---|---|
+| `clipstudio/` | Engine: download, moment finding, captions, layout, rendering, posting |
+| `static/` | The app's screens (HTML/CSS/JS, shown in a desktop window) |
+| `packaging/` | Installer build (PyInstaller + Inno Setup) |
+| `tests/` | Test suite |
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). Third-party notices are in [THIRD_PARTY.md](THIRD_PARTY.md) and `packaging/licences/`.
+
+Made by [An Intellectual Company](https://anintellectualcompany.com).

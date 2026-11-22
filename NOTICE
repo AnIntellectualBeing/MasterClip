@@ -1,0 +1,46 @@
+GTA Clip Studio - third-party notices for source code
+=====================================================
+
+clipstudio/moments.py adapts several GTA event phrase patterns (chase, crash, stunt, combat, NPC
+chaos, mission, reaction) and the idea of not counting plans, "what if" talk and retold stories
+as events from:
+
+  Grand Theft Auto 6 Clips Kitty Plugin
+  https://github.com/ColinGPT9/Grand-Theft-Auto-6-Clips-Kitty-Plugin (commit 1677a70)
+
+under the MIT License:
+
+MIT License
+
+Copyright (c) 2026 ColinGPT9
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Ideas, re-written in our own code, from NeonClipping (https://github.com/iamajmeena/neonclipping,
+MIT License, Copyright (c) 2026 Ajay K Meena and NeonClipping contributors; studied at commit 0525004):
+  - clipstudio/ytcaptions.py: YouTube's own word-timed json3 captions as the transcript;
+  - clipstudio/livechat.py: reading Twitch chat anonymously during a live stream, the 10 s bucket /
+    5-minute baseline spike rule and a hype meter;
+  - clipstudio/encoders.py: trying hardware encoders and falling back to x264;
+  - clipstudio/signals.py: raised-voice (2-4 kHz), police-light flicker and flash cues (measured on
+    the test set; not used by the picker because they did not help).
+The MIT License text above applies to those ideas as it does to the plugin's patterns.
+
+No code from the Clips Kitty application itself (ColinGPT9/clips-studio, AGPL-3.0) is used; only
+its public README was read.

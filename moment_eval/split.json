@@ -1,0 +1,5 @@
+{
+ "note": "tune = cases looked at while setting the rules; held_back = never looked at by hand, only scored.",
+ "tune": ["chatterbox-gta5rp-3449", "bubbell-gta5rp-3309", "darkviperau-gta6-5714", "syndicate-gta6-0379"],
+ "held_back": ["nakkida-gta5rp-7183", "ster-gta5rp-9706", "carmen-gta6-8373", "chatterbox-gta5rp-4897"]
+}
