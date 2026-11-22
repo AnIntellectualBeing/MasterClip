@@ -1897,8 +1897,25 @@ def start_long(ident, body: LongRequest):
 
 # ---------------- AI boost settings ----------------
 class BoostRequest(BaseModel):
-    mode: Literal["off", "api", "claude", "codex", "gemini", "gemini_api"] = "off"
+    mode: Literal["off", "api", "claude", "codex", "gemini", "gemini_api", "local"] = "off"
     key: str | None = Field(default=None, max_length=300)
+
+
+@app.post("/api/ai/local-model")
+def ai_local_model():
+    from .boost import BoostError, pull_local_model
+
+    try:
+        return pull_local_model()
+    except BoostError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/ai/local-model")
+def ai_local_model_status():
+    from .boost import pull_status
+
+    return pull_status()
 
 
 def _booster():
@@ -1973,7 +1990,7 @@ def live_window_seconds() -> int:
 
 def _live_recorder(ident, options, folder):
     from .live import LiveRecorder
-    from .sources import LIVE_RECORD_HEIGHT, MediaError, choose_live_inputs, fetch_metadata, ytdlp_command
+    from .sources import MediaError, choose_live_inputs, fetch_metadata, live_record_height, ytdlp_command
 
     fake = os.environ.get("CLIPSTUDIO_LIVE_FAKE")  # QA only: play a local file as if it were live
     if fake:
@@ -1982,7 +1999,7 @@ def _live_recorder(ident, options, folder):
     if not meta.get("is_live"):
         raise MediaError("This stream isn't live right now. Go back and pick a part of the past stream instead.")
     try:
-        video, audio = choose_live_inputs(meta, LIVE_RECORD_HEIGHT)
+        video, audio = choose_live_inputs(meta, live_record_height())
     except MediaError:
         video, audio = choose_live_inputs(meta)
     return (LiveRecorder.from_stream(video, audio, meta, folder),

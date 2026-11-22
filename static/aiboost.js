@@ -56,6 +56,7 @@
   $$("#aiMode button").forEach((b) => b.addEventListener("click", async () => {
     const mode = b.dataset.v;
     const app = APPS[mode];
+    if (mode === "local") { await openLocal(); return; }
     if (app && status && !status.installed[app]) { wanted = null; paint(INSTALL[app], "bad"); return; }
     const keyMode = KEYS[mode];
     if (keyMode && !status[keyMode.has]) {
@@ -78,6 +79,36 @@
       paint();
       test();
     } catch (err) { paint(err.message, "bad"); }
+  });
+
+  // Local AI (Ollama): install -> get a model -> on. Each step is one button.
+  async function openLocal() {
+    try { status = await CS().api("/api/ai"); } catch { /* keep old */ }
+    const box = $("#aiLocalBox");
+    box.hidden = false;
+    const installed = status && status.installed.local;
+    const models = (status && status.local_models) || [];
+    $("#aiOllamaGet").hidden = installed;
+    $("#aiModelGet").hidden = !installed || models.length > 0;
+    if (!installed) { paint("Local AI is free and private. Step 1: download and install Ollama, then press Local AI again.", "muted"); $("#aiLocalNote").textContent = ""; return; }
+    if (!models.length) { paint("Ollama is installed. Step 2: get the free AI model (one time).", "muted"); return; }
+    box.hidden = true;
+    try { status = await CS().api("/api/ai", { method: "POST", body: { mode: "local" } }); paint(); test(); } catch (err) { paint(err.message, "bad"); }
+  }
+  $("#aiModelGet").addEventListener("click", async () => {
+    const btn = $("#aiModelGet");
+    btn.disabled = true;
+    try {
+      await CS().api("/api/ai/local-model", { method: "POST" });
+      const tick = setInterval(async () => {
+        const st = await CS().api("/api/ai/local-model");
+        if (st.state === "pulling") { $("#aiLocalNote").textContent = "Downloading the AI model… you can keep using the app."; return; }
+        clearInterval(tick);
+        btn.disabled = false;
+        if (st.state === "ready") { $("#aiLocalNote").textContent = "✓ Model ready."; openLocal(); }
+        else $("#aiLocalNote").textContent = "The download stopped: " + (st.error || "try again");
+      }, 3000);
+    } catch (err) { btn.disabled = false; paint(err.message, "bad"); }
   });
 
   async function test() {

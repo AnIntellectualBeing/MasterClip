@@ -448,6 +448,8 @@ def cam_cover(design: Design, game_px, src_w: int, src_h: int):
         return None
     if not (design.hide_cam or cam_output_rect(design)):
         return None
+    if not design.hide_cam and design.cam_roi[2] * design.cam_roi[3] > 0.12:
+        return None  # a cam box this big is a bad detection: blurring it would smear the gameplay
     gx, gy, gw, gh = game_px
     cx, cy, cw, ch = _px(design.cam_roi, src_w, src_h)
     x0, y0 = max(cx, gx), max(cy, gy)

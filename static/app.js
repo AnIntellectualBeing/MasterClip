@@ -246,6 +246,7 @@ async function pickUrl(url, preview) {
   try {
     const info = await api("/api/inspect", { method: "POST", body: { url } });
     state.source = { kind: "url", url: info.url, info, liveMinutes: 0 };
+    setTimeout(() => setPostMode(state.autoPost ? "auto" : "manual"), 0);
     forgetFinishedJob();
     const badge = info.is_live ? "LIVE" : info.duration ? `PAST STREAM · ${clock(info.duration)}` : "VIDEO";
     const seen = info.views != null ? info.views : preview && preview.views;
@@ -475,6 +476,16 @@ function setPostMode(mode) {
   state.autoPost = mode === "auto";
   $$("[data-postmode]").forEach((b) => b.classList.toggle("on", b.dataset.postmode === mode));
   try { sessionStorage.setItem("clipstudio.postmode", mode); } catch { /* private mode */ }
+  // Auto-post = non-stop clipping: the 2/5/10 min choice doesn't apply, so it hides (and comes back when off).
+  const minutes = $("#liveMinutes");
+  if (minutes) {
+    minutes.hidden = state.autoPost;
+    if (state.autoPost && state.source && state.source.info && state.source.info.is_live) {
+      state.source.liveMinutes = 0;
+      segOn(minutes, minutes.querySelector('[data-min="0"]'));
+      $("#liveHint").textContent = "🤖 Auto-post is on: we keep clipping non-stop and post each clip, until you press Stop or the stream ends.";
+    }
+  }
 }
 $$("[data-postmode]").forEach((b) => b.addEventListener("click", async () => {
   setPostMode(b.dataset.postmode);

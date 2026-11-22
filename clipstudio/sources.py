@@ -15,7 +15,17 @@ from .media import MediaError, find_tool
 
 _ALLOWED_PROTOCOLS = {"http", "https", "m3u8", "m3u8_native"}
 _MAX_LIVE_HEIGHT = 1080
-LIVE_RECORD_HEIGHT = 720  # light enough to re-encode in real time on a laptop
+LIVE_RECORD_HEIGHT = 720  # CPU-only PCs: light enough to re-encode in real time
+
+
+def live_record_height() -> int:
+    """1080p when a graphics-card encoder works (sharp corner-cam / zoomed Shorts), else 720p."""
+    try:
+        from .encoders import encoder
+
+        return 1080 if encoder() != "x264" else LIVE_RECORD_HEIGHT
+    except Exception:
+        return LIVE_RECORD_HEIGHT
 _MIN_CAPTURE_SECONDS = 30
 _MAX_CAPTURE_SECONDS = 10800
 # HLS first: YouTube's HLS playlists seek by segment, so a 30 s section of a
@@ -509,7 +519,7 @@ def import_url(
     target = folder / "source.mp4"
     if metadata.get("is_live"):
         try:
-            video_url, audio_url = choose_live_inputs(metadata, LIVE_RECORD_HEIGHT)
+            video_url, audio_url = choose_live_inputs(metadata, live_record_height())
         except MediaError:
             video_url, audio_url = choose_live_inputs(metadata)
         seconds = int(capture_seconds)

@@ -276,6 +276,11 @@
             <button type="button" data-v="gemini_api">Gemini key (free)</button>
             <button type="button" data-v="local">Local AI (Ollama, free)</button>
           </div>
+          <div id="aiLocalBox" class="ai-local" hidden>
+            <a id="aiOllamaGet" class="primary small" href="https://ollama.com/download/windows" target="_blank" rel="noopener">⬇ Download Ollama (free)</a>
+            <button id="aiModelGet" class="primary small" type="button">⬇ Get the free AI model (2 GB, once)</button>
+            <small id="aiLocalNote" class="muted"></small>
+          </div>
           <form id="aiKeyForm" class="search ai-key" hidden>
             <input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-… (from console.anthropic.com)" aria-label="API key">
             <button class="primary" type="submit">Save</button>

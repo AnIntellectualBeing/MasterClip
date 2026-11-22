@@ -53,13 +53,22 @@ class LiveRecorder:
         """Plays a local file at real speed, like a live stream (used by tests and QA)."""
         return cls(["-re", "-i", str(path)], "0:a:0?", folder, max_seconds)
 
+    @staticmethod
+    def video_args() -> list[str]:
+        try:
+            from .encoders import video_args
+
+            return video_args(21)  # graphics-card encoder when it works, else x264
+        except Exception:
+            return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21"]
+
     def command(self) -> list[str]:
         return [
             find_tool("ffmpeg"), "-y", "-hide_banner", "-loglevel", "error",
             *self.inputs,
             *(["-t", str(self.max_seconds)] if self.max_seconds else []),
             "-map", "0:v:0", "-map", self.audio_map,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_args(),
             "-force_key_frames", f"expr:gte(t,n_forced*{KEYFRAME_SECONDS})",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
             "-f", "mpegts", "-flush_packets", "1",

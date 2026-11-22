@@ -649,3 +649,5 @@ kbd { font: 700 12px/1 "Segoe UI", system-ui, sans-serif; background: #fff; bord
 .format-routing input[type="checkbox"] { width: auto; min-height: auto; accent-color: var(--brand); }
 .top-actions { flex-wrap: wrap; }
 .pill.retrying { color: #9b3026; background: #fff0ec; }
+
+.ai-local { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }

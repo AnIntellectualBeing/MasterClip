@@ -18,6 +18,7 @@ Only short transcript snippets and timings are sent, never the video.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -107,7 +108,13 @@ def parse_picks(data, ids: set[str]) -> list[Pick]:
         except ValueError as error:
             raise BoostError("The AI's answer wasn't readable.") from error
     picks = []
-    for row in (data or {}).get("moments", []):
+    rows = data.get("moments") if isinstance(data, dict) else data
+    if isinstance(data, dict) and not isinstance(rows, list):
+        # small local models answer {"m1": {"score": 8, "title": ...}, ...}
+        rows = [dict(v, id=k) for k, v in data.items() if isinstance(v, dict)]
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
         ident = str(row.get("id", ""))
         if ident in ids and row.get("title"):
             try:
@@ -159,7 +166,7 @@ def _no_window():
 
 
 def _ask_claude_cli(prompt: str, timeout: int = 240) -> object:
-    exe = shutil.which("claude")
+    exe = find_app("claude")
     if not exe:
         raise BoostError("The Claude app isn't installed on this PC.")
     with tempfile.TemporaryDirectory(prefix="clipstudio-ai-") as folder:
@@ -182,7 +189,7 @@ def _ask_claude_cli(prompt: str, timeout: int = 240) -> object:
 
 
 def _ask_codex_cli(prompt: str, timeout: int = 300) -> object:
-    exe = shutil.which("codex")
+    exe = find_app("codex")
     if not exe:
         raise BoostError("The Codex app isn't installed on this PC.")
     with tempfile.TemporaryDirectory(prefix="clipstudio-ai-") as folder:
@@ -202,7 +209,7 @@ def _ask_codex_cli(prompt: str, timeout: int = 300) -> object:
 
 
 def _ask_gemini_cli(prompt: str, timeout: int = 300) -> object:
-    exe = shutil.which("gemini")
+    exe = find_app("gemini")
     if not exe:
         raise BoostError("The Gemini CLI isn't installed on this PC (npm install -g @google/gemini-cli).")
     ask = "Answer with only the JSON object described above, nothing else."
@@ -253,10 +260,73 @@ def _ask_gemini_api(prompt: str, key: str, session=None) -> object:
         raise BoostError("Gemini's answer was empty. The normal picker was used.") from error
 
 
+LOCAL_MODEL = "qwen2.5:3b"  # ~2 GB, good at short JSON answers, runs on most PCs
+_PULL = {"state": "idle", "error": ""}
+
+
+def start_ollama() -> bool:
+    """Ollama installed but not running (common after a reboot): start it quietly."""
+    import requests
+
+    try:
+        requests.get(f"{OLLAMA}/api/tags", timeout=1.5)
+        return True
+    except Exception:
+        pass
+    exe = find_app("ollama")
+    if not exe:
+        return False
+    try:
+        subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=_no_window())
+    except OSError:
+        return False
+    import time
+
+    for _ in range(20):
+        time.sleep(0.5)
+        try:
+            requests.get(f"{OLLAMA}/api/tags", timeout=1)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def pull_local_model():
+    """One click: download the free local AI model in the background."""
+    import threading
+
+    import requests
+
+    if _PULL["state"] == "pulling":
+        return dict(_PULL)
+    if not start_ollama():
+        raise BoostError("Install Ollama first (free, ollama.com/download), then press this again.")
+
+    def run():
+        _PULL.update(state="pulling", error="")
+        try:
+            reply = requests.post(f"{OLLAMA}/api/pull", json={"model": LOCAL_MODEL, "stream": False}, timeout=3600)
+            ok = reply.status_code < 400
+            _PULL.update(state="ready" if ok else "error", error="" if ok else reply.text[:200])
+        except Exception as error:  # noqa: BLE001
+            _PULL.update(state="error", error=str(error)[:200])
+
+    threading.Thread(target=run, name="ollama-pull", daemon=True).start()
+    _PULL["state"] = "pulling"
+    return dict(_PULL)
+
+
+def pull_status() -> dict:
+    return dict(_PULL)
+
+
 def ollama_models(session=None) -> list[str]:
     """Models in Ollama on this PC (free, runs on your own GPU/CPU, no key), or []."""
     import requests
 
+    if session is None:
+        start_ollama()
     try:
         reply = (session or requests).get(f"{OLLAMA}/api/tags", timeout=2)
         return [m["name"] for m in reply.json().get("models", []) if m.get("name")]
@@ -269,16 +339,46 @@ def _ask_ollama(prompt: str, session=None) -> object:
 
     models = ollama_models(session)
     if not models:
-        raise BoostError("Ollama isn't running or has no model. Install it from ollama.com, then run `ollama pull llama3.2`.")
+        raise BoostError("Local AI has no model yet. Press \"Get the free AI model\" in AI boost (about 2 GB, once).")
     # Prefer a small fast model when several are installed.
     model = next((m for pref in ("llama3.2", "qwen2.5", "gemma", "mistral", "llama3") for m in models if m.startswith(pref)), models[0])
     try:
         reply = (session or requests).post(f"{OLLAMA}/api/generate", timeout=300, json={
-            "model": model, "system": SYSTEM, "prompt": prompt, "format": "json", "stream": False,
+            "model": model, "system": SYSTEM, "format": "json",
+            "prompt": prompt + '\n\nAnswer exactly like: {"moments": [{"id": "m1", "score": 8, "title": "short funny title"}]}', "stream": False,
             "options": {"temperature": 0.2}})
         return reply.json().get("response") or ""
     except Exception as error:
         raise BoostError("Ollama didn't answer in time. The normal picker was used.") from error
+
+
+def find_app(name: str) -> str | None:
+    """A command-line app like a terminal would find it, plus the usual install folders (npm global,
+    Claude/Codex/Ollama installers). An app opened from the Start menu can miss new PATH entries."""
+    hit = shutil.which(name)
+    if hit:
+        return hit
+    home = Path.home()
+    appdata = Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming")
+    local = Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
+    folders = [appdata / "npm", home / ".local" / "bin", home / ".claude" / "local", home / "scoop" / "shims",
+               local / "Programs" / "Ollama", local / "Programs" / "claude", local / "Microsoft" / "WinGet" / "Links",
+               Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "nodejs", home / ".bun" / "bin",
+               home / ".codex" / "bin", local / "pnpm", local / "Programs" / "OpenAI" / "Codex" / "bin"]
+    try:
+        # a user PATH set after this app started (read fresh from the registry)
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            folders += [Path(os.path.expandvars(p)) for p in str(winreg.QueryValueEx(key, "Path")[0]).split(";") if p]
+    except Exception:
+        pass
+    for folder in folders:
+        for ext in (".cmd", ".exe", ".bat", ".ps1", ""):
+            candidate = folder / f"{name}{ext}"
+            if candidate.is_file() and ext != ".ps1":
+                return str(candidate)
+    return None
 
 
 # ---------------- settings + entry points ----------------
@@ -304,8 +404,9 @@ class Booster:
             "key_hint": vault.hint(key),
             "has_gemini_key": bool(gkey),
             "gemini_hint": vault.hint(gkey),
-            "installed": {**{name: bool(shutil.which(name)) for name in ("claude", "codex", "gemini")},
-                          "local": bool(shutil.which("ollama")) or bool(ollama_models())},
+            "installed": {**{name: bool(find_app(name)) for name in ("claude", "codex", "gemini")},
+                          "local": bool(find_app("ollama")) or bool(ollama_models())},
+            "local_models": ollama_models(),
         }
 
     def save(self, mode: str, key: str | None = None) -> dict:
