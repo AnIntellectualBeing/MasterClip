@@ -376,12 +376,25 @@ def find_app(name: str) -> str | None:
                local / "Programs" / "Ollama", local / "Programs" / "claude", local / "Microsoft" / "WinGet" / "Links",
                Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "nodejs", home / ".bun" / "bin",
                home / ".codex" / "bin", local / "pnpm", local / "Programs" / "OpenAI" / "Codex" / "bin"]
+    folders += [local / "Microsoft" / "WindowsApps", home / ".volta" / "bin", appdata / "fnm" / "aliases" / "default",
+                Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "nodejs",
+                Path(os.environ.get("NVM_SYMLINK") or r"C:\nvm4w\nodejs")]
+    for nvm in (Path(os.environ.get("NVM_HOME") or appdata / "nvm"),):
+        try:
+            folders += sorted((d for d in nvm.iterdir() if d.is_dir()), reverse=True)
+        except OSError:
+            pass
     try:
-        # a user PATH set after this app started (read fresh from the registry)
+        # PATH as set now (user + whole PC), read fresh: the app may have started before an install
         import winreg
 
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
-            folders += [Path(os.path.expandvars(p)) for p in str(winreg.QueryValueEx(key, "Path")[0]).split(";") if p]
+        for hive, sub in ((winreg.HKEY_CURRENT_USER, "Environment"),
+                          (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")):
+            try:
+                with winreg.OpenKey(hive, sub) as key:
+                    folders += [Path(os.path.expandvars(p)) for p in str(winreg.QueryValueEx(key, "Path")[0]).split(";") if p]
+            except OSError:
+                continue
     except Exception:
         pass
     for folder in folders:

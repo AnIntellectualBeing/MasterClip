@@ -49,3 +49,38 @@ def test_protected_app_folder_does_not_crash_ai_status(tmp_path, monkeypatch):
     (tmp_path / "npm" / "codex.exe").write_text("x")
     assert boost.find_app("codex").endswith("codex.exe")
     assert boost._has("nothing-like-this") is False
+
+
+def test_gpu_failure_mid_job_redoes_captions_on_cpu(monkeypatch):
+    from clipstudio import transcript
+
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append(transcript._GPU["ok"])
+        if len(calls) == 1:
+            raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+        return [{"text": "ok"}]
+
+    monkeypatch.setattr(transcript, "_transcribe_run", run)
+    monkeypatch.setitem(transcript._GPU, "ok", True)
+    assert transcript.transcribe("a.wav") == [{"text": "ok"}]
+    assert calls == [True, False]
+
+
+def test_gpu_probe_runs_outside_the_engine(monkeypatch):
+    from clipstudio import transcript
+
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+
+        class R:
+            returncode = 1
+
+        return R()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    assert transcript._probe_gpu("base") is False
+    assert "gpu_probe_main" in " ".join(seen["cmd"])

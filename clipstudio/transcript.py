@@ -184,6 +184,43 @@ def model_status(model_size: str = "base") -> str:
 _GPU = {"ok": None}
 
 
+def gpu_probe_main(ref) -> int:
+    """Runs in a throwaway process: missing NVIDIA DLLs (cuDNN/cuBLAS) can kill a process outright,
+    and that must never be the app's engine (a friend's laptop lost every later clip that way)."""
+    try:
+        import numpy as np
+        from faster_whisper import WhisperModel
+
+        model = WhisperModel(str(ref), device="cuda", compute_type="float16")
+        noise = (np.random.default_rng(1).standard_normal(16000 * 3) * 0.1).astype(np.float32)
+        list(model.transcribe(noise, language="en", beam_size=5, word_timestamps=True)[0])
+        return 0
+    except Exception:  # noqa: BLE001
+        return 1
+
+
+def _probe_gpu(ref) -> bool:
+    import os
+    import subprocess
+    import sys
+
+    if os.environ.get("CLIPSTUDIO_NO_GPU"):
+        return False
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--gpu-probe", str(ref)]
+        cwd = None
+    else:
+        cmd = [sys.executable, "-c", "import sys; from clipstudio.transcript import gpu_probe_main; "
+               "sys.exit(gpu_probe_main(sys.argv[1]))", str(ref)]
+        cwd = str(Path(__file__).resolve().parent.parent)
+    try:
+        run = subprocess.run(cmd, cwd=cwd, timeout=240, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return run.returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _whisper(ref):
     """An NVIDIA GPU (with its CUDA libraries) makes speech ~5x faster; anything else uses the CPU."""
     from faster_whisper import WhisperModel
@@ -193,7 +230,7 @@ def _whisper(ref):
             import ctranslate2
             import numpy as np
 
-            if ctranslate2.get_cuda_device_count() > 0:
+            if ctranslate2.get_cuda_device_count() > 0 and _probe_gpu(ref):
                 model = WhisperModel(str(ref), device="cuda", compute_type="float16")
                 list(model.transcribe(np.zeros(16000, dtype=np.float32), language="en")[0])  # proves the libraries load
                 _GPU["ok"] = True
@@ -279,7 +316,22 @@ def quick_language(audio_path, seconds: float = 45.0) -> str | None:
         return None
 
 
-def transcribe(
+def transcribe(*args, **kwargs) -> list[dict]:
+    """Speech to text. If the graphics card fails part-way (driver/DLL trouble), redo it on the CPU."""
+    try:
+        return _transcribe_run(*args, **kwargs)
+    except TranscriptError:
+        raise
+    except Exception as error:  # noqa: BLE001
+        text = str(error).lower()
+        if _GPU["ok"] and any(t in text for t in ("cuda", "cublas", "cudnn", "gpu", "device")):
+            _GPU["ok"] = False
+            _load_model.cache_clear()
+            return _transcribe_run(*args, **kwargs)
+        raise
+
+
+def _transcribe_run(
     audio_path: Path,
     model_size: str = "base",
     language: str | None = None,

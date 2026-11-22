@@ -626,6 +626,23 @@ const FRIENDLY_STAGE = {
   analyzing: null,
   rendering: null,
 };
+// One video is made at a time. If ours waits, say why and let the buyer stop the older one
+// (a friend's app looked broken: every new video sat behind a stuck one).
+async function explainQueue(job) {
+  const note = $("#queueNote");
+  if (Date.now() - new Date(job.created_at).getTime() < 8000) return;
+  let ahead;
+  try {
+    const { jobs } = await api("/api/jobs");
+    ahead = (jobs || []).find((j) => j.id !== job.id && ["importing", "transcribing", "analyzing", "rendering"].includes(j.status) && !j.live);
+  } catch { return; }
+  if (!ahead) { note.hidden = true; return; }
+  note.hidden = false;
+  note.replaceChildren(
+    el("span", { text: `Another video is still being made (“${ahead.title || "video"}”: ${ahead.message || ahead.status}). Yours starts right after it. ` }),
+    el("button", { class: "ghost small", type: "button", text: "Stop the other one",
+      onclick: async (e) => { e.target.disabled = true; try { await api(`/api/jobs/${ahead.id}/cancel`, { method: "POST" }); e.target.textContent = "Stopping…"; } catch (err) { e.target.textContent = err.message; } } }));
+}
 function watchJob(id) {
   clearInterval(state.poll);
   const tick = async () => {
@@ -641,8 +658,10 @@ function watchJob(id) {
       $("#liveBar").hidden = true;
       if (["queued", "importing", "transcribing", "analyzing", "rendering"].includes(job.status)) {
         showWorking(FRIENDLY_STAGE[job.status] || job.message, job.progress, job);
+        if (job.status === "queued") await explainQueue(job); else $("#queueNote").hidden = true;
         return;
       }
+      $("#queueNote").hidden = true;
       clearInterval(state.poll);
       state.phased = false;
       state.shown = 0;

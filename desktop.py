@@ -282,4 +282,8 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--gpu-probe" in sys.argv:  # throwaway child: can the graphics card run speech safely?
+        from clipstudio.transcript import gpu_probe_main
+
+        sys.exit(gpu_probe_main(sys.argv[sys.argv.index("--gpu-probe") + 1]))
     sys.exit(main())
