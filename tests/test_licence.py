@@ -1,3 +1,4 @@
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -77,6 +78,20 @@ def test_online_seat_limit(keys, vault):
     assert Licence(pub, api="https://lic.test", http=ok).activate(key)["licensed"]
     url, body = ok.calls[0]
     assert url == "https://lic.test/activate" and body["id"] == "order_9" and len(body["machine"]) == 24
+
+
+def test_online_activation_without_windows_registry(keys, vault, monkeypatch):
+    # Linux runners have no winreg; activation must still reach the server.
+    monkeypatch.setitem(sys.modules, "winreg", None)
+    private, pub = keys
+    key = make_key(private, "order_linux", seats=2)
+    full = FakeHttp(409, {"error": "Used on 2 PCs already."})
+    with pytest.raises(LicenceError, match="2 PCs"):
+        Licence(pub, api="https://lic.test", http=full).activate(key)
+    assert "licence_key" not in vault
+    ok = FakeHttp(200)
+    assert Licence(pub, api="https://lic.test", http=ok).activate(key)["licensed"]
+    assert len(ok.calls[0][1]["machine"]) == 24
 
 
 def test_status_tells_the_window_where_to_buy():

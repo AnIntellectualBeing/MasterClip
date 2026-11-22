@@ -102,7 +102,7 @@ def machine_id() -> str:
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography",
                             0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
             raw = winreg.QueryValueEx(key, "MachineGuid")[0]
-    except OSError:
+    except (ImportError, OSError):
         raw = os.environ.get("COMPUTERNAME", "") + os.environ.get("USERNAME", "")
     return hashlib.sha256(("clipstudio:" + raw).encode()).hexdigest()[:24]
 
