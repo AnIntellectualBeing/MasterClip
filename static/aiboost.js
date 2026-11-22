@@ -50,11 +50,13 @@
   }
 
   async function load() {
-    try { status = await CS().api("/api/ai"); paint(); } catch { /* server starting */ }
+    try { status = await CS().api("/api/ai"); paint(); }
+    catch { setTimeout(load, 3000); /* server starting: try again */ }
   }
 
   $$("#aiMode button").forEach((b) => b.addEventListener("click", async () => {
     const mode = b.dataset.v;
+    if (!status) { try { status = await CS().api("/api/ai"); } catch (err) { $("#aiState").textContent = "AI settings couldn't load: " + err.message; return; } }
     const app = APPS[mode];
     if (mode === "local") { await openLocal(); return; }
     if (app && status && !status.installed[app]) { wanted = null; paint(INSTALL[app], "bad"); return; }

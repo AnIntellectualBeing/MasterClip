@@ -43,6 +43,8 @@ with tempfile.TemporaryDirectory(prefix="masterclip-package-") as temp:
         health = requests.get(base + "/api/health", timeout=10).json()
         from clipstudio import __version__
         assert health["version"] == __version__, health
+        ai = requests.get(base + "/api/ai", timeout=60)
+        assert ai.status_code == 200 and "installed" in ai.json(), ai.text[:300]
         assert health["ffmpeg"] and health["ffprobe"] and health["speech"]
         assert requests.get(base + "/api/speech-model").json()["state"] == "bundled"
         assert requests.get(base + "/api/post/status").json()["ready"] is False
@@ -65,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix="masterclip-package-") as temp:
             page.wait_for_selector("#posting:not([hidden])")
             assert page.locator("#postCadence").input_value() == "hourly"
             assert page.locator("#clipsPerHour").is_visible()
-            assert not page.locator("#dailyTimesField").is_visible()
+            page.wait_for_selector("#dailyTimesField", state="hidden", timeout=15000)
             page.screenshot(path=str(out / "posting-setup.png"), full_page=True)
             assert "locked" in page.locator("#pstep3").get_attribute("class")
             assert page.locator("#shortInstagram").is_checked()

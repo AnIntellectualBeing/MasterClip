@@ -352,10 +352,21 @@ def _ask_ollama(prompt: str, session=None) -> object:
         raise BoostError("Ollama didn't answer in time. The normal picker was used.") from error
 
 
+def _has(name: str) -> bool:
+    """Never let one odd folder break the whole AI box."""
+    try:
+        return bool(find_app(name))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def find_app(name: str) -> str | None:
     """A command-line app like a terminal would find it, plus the usual install folders (npm global,
     Claude/Codex/Ollama installers). An app opened from the Start menu can miss new PATH entries."""
-    hit = shutil.which(name)
+    try:
+        hit = shutil.which(name)
+    except OSError:
+        hit = None
     if hit:
         return hit
     home = Path.home()
@@ -374,10 +385,18 @@ def find_app(name: str) -> str | None:
     except Exception:
         pass
     for folder in folders:
-        for ext in (".cmd", ".exe", ".bat", ".ps1", ""):
+        for ext in (".exe", ".cmd", ".bat", ""):
             candidate = folder / f"{name}{ext}"
-            if candidate.is_file() and ext != ".ps1":
-                return str(candidate)
+            try:
+                if candidate.is_file():
+                    return str(candidate)
+            except OSError:
+                # e.g. WinError 448 on app folders Windows protects (Codex's bin): it exists, it's installed
+                try:
+                    if candidate.name in {c.name for c in folder.iterdir()}:
+                        return str(candidate)
+                except OSError:
+                    pass
     return None
 
 
@@ -398,15 +417,19 @@ class Booster:
     def status(self) -> dict:
         key = vault.get(KEY_NAME)
         gkey = vault.get(GEMINI_KEY_NAME)
+        try:
+            models = ollama_models()
+        except Exception:  # noqa: BLE001
+            models = []
         return {
             **self.settings(),
             "has_key": bool(key),
             "key_hint": vault.hint(key),
             "has_gemini_key": bool(gkey),
             "gemini_hint": vault.hint(gkey),
-            "installed": {**{name: bool(find_app(name)) for name in ("claude", "codex", "gemini")},
-                          "local": bool(find_app("ollama")) or bool(ollama_models())},
-            "local_models": ollama_models(),
+            "installed": {**{name: _has(name) for name in ("claude", "codex", "gemini")},
+                          "local": _has("ollama") or bool(models)},
+            "local_models": models,
         }
 
     def save(self, mode: str, key: str | None = None) -> dict:

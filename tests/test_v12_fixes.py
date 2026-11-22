@@ -29,3 +29,23 @@ def test_huge_cam_detection_is_not_blurred_over_the_gameplay():
     assert cam_cover(d, (0, 0, 1920, 1080), 1920, 1080) is None
     small = template_design("reaction_corner", cam_roi=[0.78, 0.41, 0.21, 0.3])
     assert cam_cover(small, (0, 0, 1920, 1080), 1920, 1080) is not None
+
+
+def test_protected_app_folder_does_not_crash_ai_status(tmp_path, monkeypatch):
+    """WinError 448 on Codex's bin folder crashed /api/ai, so no AI button worked (1.2.0)."""
+    from pathlib import Path
+
+    monkeypatch.setattr(boost.shutil, "which", lambda name: None)
+    real = Path.is_file
+
+    def protected(self):
+        if "npm" in str(self):
+            raise OSError(448, "untrusted mount point")
+        return real(self)
+
+    monkeypatch.setattr(Path, "is_file", protected)
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    (tmp_path / "npm").mkdir()
+    (tmp_path / "npm" / "codex.exe").write_text("x")
+    assert boost.find_app("codex").endswith("codex.exe")
+    assert boost._has("nothing-like-this") is False

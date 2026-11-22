@@ -1,6 +1,6 @@
 ; Inno Setup script for Clip Studio. Built by packaging/build.ps1 (it passes /DSourceDir and /DOutDir).
 #define AppName "MasterClip"
-#define AppVersion "1.2.0"
+#define AppVersion "1.2.1"
 #define AppExe "ClipStudio.exe"
 #ifndef SourceDir
   #error Pass /DSourceDir=<PyInstaller "Clip Studio" folder>
