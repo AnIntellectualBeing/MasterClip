@@ -298,6 +298,17 @@ def _youtube_captions(folder, duration):
         return None
 
 
+def job_warn(ident, note: str):
+    warnings = list(store.get(ident).get("warnings") or [])
+    if note not in warnings:
+        store.update(ident, warnings=warnings + [note])
+
+
+def _hms(seconds) -> str:
+    seconds = int(float(seconds))
+    return f"{seconds // 3600}:{seconds % 3600 // 60:02}:{seconds % 60:02}"
+
+
 def analyze(ident, options, imported_transcript=None):
     event = events[ident]
     folder = store.folder(ident)
@@ -308,13 +319,23 @@ def analyze(ident, options, imported_transcript=None):
         hot_chat = None
         hot = options.source_type == "url" and (store.get(ident).get("section") or {}).get("hot")
         if hot:
-            from .sources import import_hotspots
+            from .sources import HotPartsFailed, import_hotspots
 
-            source, title, hot_chat, parts = import_hotspots(
-                options.source, folder, event, lambda p, m: progress(ident, "importing", p * 0.25, m),
-                max_height=options.source_height)
-            store.update(ident, title=title, source_path=str(source), section=None, parts=[list(p) for p in parts])
-        elif options.source_type == "url":
+            fallback = (store.get(ident).get("section") or {}).get("fallback")
+            try:
+                source, title, hot_chat, parts = import_hotspots(
+                    options.source, folder, event, lambda p, m: progress(ident, "importing", p * 0.25, m),
+                    max_height=options.source_height)
+                store.update(ident, title=title, source_path=str(source), section=None, parts=[list(p) for p in parts])
+            except HotPartsFailed as error:
+                hot = False
+                if not fallback:
+                    fallback = [0.0, 600.0]
+                store.update(ident, section=dict(start=float(fallback[0]), end=float(fallback[1])))
+                job_warn(ident, f"The whole-stream scan couldn't download its parts ({error}), so we used "
+                                f"{_hms(fallback[0])}–{_hms(fallback[1])} instead.")
+                progress(ident, "importing", 0.02, "Whole-stream scan was blocked: downloading your time range instead")
+        if not hot and options.source_type == "url":
             section = store.get(ident).get("section")
             source, title = import_url(
                 options.source,
@@ -1020,7 +1041,8 @@ def create_project(options: ProjectRequest):
     if options.scan_whole:
         if options.source_type != "url":
             raise HTTPException(400, "Whole-stream scan only works with a video link.")
-        section = dict(hot=True)
+        # keep a plain range too: if YouTube blocks the hot parts we fall back to it instead of failing
+        section = dict(hot=True, fallback=[section["start"], section["end"]] if section else None)
     source_options = SourceRequest(
         **options.model_dump(include=set(SourceRequest.model_fields))
     )
@@ -1911,6 +1933,23 @@ def start_long(ident, body: LongRequest):
 class BoostRequest(BaseModel):
     mode: Literal["off", "api", "claude", "codex", "gemini", "gemini_api", "local"] = "off"
     key: str | None = Field(default=None, max_length=300)
+
+
+class AppPathRequest(BaseModel):
+    name: Literal["claude", "codex", "gemini", "ollama"]
+    path: str = Field(default="", max_length=600)
+
+
+@app.post("/api/ai/path")
+def ai_app_path(body: AppPathRequest):
+    """Buyer tells us where Claude/Codex/Gemini is when we can't find it by ourselves."""
+    from .boost import BoostError, set_custom_path
+
+    try:
+        set_custom_path(body.name, body.path)
+    except BoostError as exc:
+        raise HTTPException(400, str(exc))
+    return _booster().status()
 
 
 @app.post("/api/ai/local-model")

@@ -455,7 +455,7 @@ function renderSummary() {
   }
   let where = "";
   if (src && src.kind === "url") {
-    where = src.info.is_live ? `record ${src.liveMinutes} min of the live stream` : src.info.duration ? `use ${clock(src.start)}–${clock(src.end)} of the stream` : "use the video";
+    where = src.info.is_live ? `record ${src.liveMinutes} min of the live stream` : src.whole ? "scan the whole stream and download only its hottest parts" : src.info.duration ? `use ${clock(src.start)}–${clock(src.end)} of the stream` : "use the video";
   } else if (src) where = `use ${src.file.name}`;
   const n = state.recipe.count;
   const plan = window.ClipDesigner.summary(state.recipe.length);
@@ -532,8 +532,11 @@ $("#makeClips").addEventListener("click", async () => {
       };
       if (src.info.is_live && !src.liveMinutes) body.live_rolling = true;
       else if (src.info.is_live) body.capture_seconds = src.liveMinutes * 60;
-      else if (src.whole) body.scan_whole = true;
-      else if (src.info.duration > 0) { body.section_start = src.start; body.section_end = src.end; }
+      else if (src.whole) {
+        body.scan_whole = true;
+        // backup range if the site blocks the hot parts
+        if (src.info.duration > 0 && src.end > src.start) { body.section_start = src.start; body.section_end = src.end; }
+      } else if (src.info.duration > 0) { body.section_start = src.start; body.section_end = src.end; }
       job = await api("/api/projects", { method: "POST", body });
     } else {
       const form = new FormData();

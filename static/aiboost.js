@@ -11,8 +11,8 @@
     gemini_api: { has: "has_gemini_key", hint: "gemini_hint", placeholder: "AIza… (free from aistudio.google.com)", name: "Gemini" },
   };
   const INSTALL = {
-    claude: "Not found on this PC. Install Claude Code and sign in once.",
-    codex: "Not found on this PC. Install the Codex CLI and sign in once.",
+    claude: "Claude wasn't found automatically. Install Claude Code and sign in once, or paste where it is below.",
+    codex: "Codex wasn't found automatically. Install Codex and sign in once, or paste where it is below.",
     gemini: "Not found on this PC. Install the Gemini CLI (npm install -g @google/gemini-cli), run “gemini” once and sign in with Google. Antigravity can't be called by other apps, but the same Google account works here.",
     local: "Ollama not found. Install it free from ollama.com, then run: ollama pull llama3.2",
   };
@@ -58,8 +58,12 @@
     const mode = b.dataset.v;
     if (!status) { try { status = await CS().api("/api/ai"); } catch (err) { $("#aiState").textContent = "AI settings couldn't load: " + err.message; return; } }
     const app = APPS[mode];
-    if (mode === "local") { await openLocal(); return; }
-    if (app && status && !status.installed[app]) { wanted = null; paint(INSTALL[app], "bad"); return; }
+    wanted = null; // a half-picked key mode must not stay selected when another button is clicked
+    $("#aiKeyForm").hidden = true;
+    if (mode !== "local") $("#aiLocalBox").hidden = true;
+    if (mode === "local") { hidePath(); await openLocal(); return; }
+    if (app && status && !status.installed[app]) { wanted = null; askPath(app); paint(INSTALL[app], "bad"); return; }
+    hidePath();
     const keyMode = KEYS[mode];
     if (keyMode && !status[keyMode.has]) {
       wanted = mode;
@@ -111,6 +115,33 @@
         else $("#aiLocalNote").textContent = "The download stopped: " + (st.error || "try again");
       }, 3000);
     } catch (err) { btn.disabled = false; paint(err.message, "bad"); }
+  });
+
+  // Can't find the app by ourselves: let the buyer paste where it is (remembered for next time).
+  let pathFor = null;
+  function askPath(app) {
+    pathFor = app;
+    $("#aiPathForm").hidden = false;
+    $("#aiPathHelp").hidden = false;
+    $("#aiPathHelp").innerHTML = `Already installed? Open <b>Command Prompt</b>, type <b>where ${app}</b>, and paste the first line it shows here.`;
+    $("#aiPath").placeholder = `C:\\Users\\you\\...\\${app}.exe`;
+    $("#aiPath").focus();
+  }
+  function hidePath() { pathFor = null; $("#aiPathForm").hidden = true; $("#aiPathHelp").hidden = true; }
+  $("#aiPathForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!pathFor) return;
+    const app = pathFor;
+    try {
+      status = await CS().api("/api/ai/path", { method: "POST", body: { name: app, path: $("#aiPath").value } });
+      if (!status.installed[app]) throw new Error("Still not found there. Paste the full path to the .exe or .cmd file.");
+      $("#aiPath").value = "";
+      hidePath();
+      const mode = Object.keys(APPS).find((m) => APPS[m] === app);
+      status = await CS().api("/api/ai", { method: "POST", body: { mode } });
+      paint();
+      test();
+    } catch (err) { paint(err.message, "bad"); }
   });
 
   async function test() {

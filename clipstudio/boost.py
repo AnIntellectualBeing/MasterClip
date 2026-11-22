@@ -352,6 +352,13 @@ def _ask_ollama(prompt: str, session=None) -> object:
         raise BoostError("Ollama didn't answer in time. The normal picker was used.") from error
 
 
+def _safe_find(name: str) -> str:
+    try:
+        return find_app(name) or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _has(name: str) -> bool:
     """Never let one odd folder break the whole AI box."""
     try:
@@ -360,15 +367,56 @@ def _has(name: str) -> bool:
         return False
 
 
+CUSTOM_PATHS: dict[str, str] = {}  # app name -> path the buyer pasted (loaded by Booster)
+_PATHS_FILE: list = [None]
+
+
+def real_path(path, _depth: int = 0) -> Path:
+    """Follow junctions/symlinks by reading their targets, never by walking through them.
+    Codex's bin is a junction to a junction; Windows refuses (WinError 448, 'untrusted mount point')
+    to let some apps walk through user-made junctions, but reading the target is allowed."""
+    parts = Path(path).parts
+    if not parts:
+        return Path(path)
+    current = Path(parts[0])
+    for part in parts[1:]:
+        current = current / part
+        for _ in range(8):
+            try:
+                target = os.readlink(current)
+            except (OSError, ValueError, NotImplementedError):
+                break
+            if target.startswith("\\\\?\\"):
+                target = target[4:]
+            current = Path(target) if os.path.isabs(target) else current.parent / target
+            if _depth < 8:
+                current = real_path(current, _depth + 1)  # the target can hold junctions too
+    return current
+
+
+def _file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def find_app(name: str) -> str | None:
     """A command-line app like a terminal would find it, plus the usual install folders (npm global,
-    Claude/Codex/Ollama installers). An app opened from the Start menu can miss new PATH entries."""
+    Claude/Codex/Ollama installers). An app opened from the Start menu can miss new PATH entries.
+    Returns the real file path (junctions resolved), so it can also be started."""
+    custom = CUSTOM_PATHS.get(name)
+    if custom:
+        resolved = real_path(custom)
+        if _file(resolved):
+            return str(resolved)
     try:
         hit = shutil.which(name)
     except OSError:
         hit = None
     if hit:
-        return hit
+        resolved = real_path(hit)
+        return str(resolved) if _file(resolved) else hit
     home = Path.home()
     appdata = Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming")
     local = Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
@@ -397,20 +445,49 @@ def find_app(name: str) -> str | None:
                 continue
     except Exception:
         pass
+    if name == "codex":
+        # Codex's own installer: ~/.codex/packages/standalone/releases/<version>/bin (newest first)
+        try:
+            releases = home / ".codex" / "packages" / "standalone" / "releases"
+            folders += [d / "bin" for d in sorted(releases.iterdir(), reverse=True) if d.is_dir()]
+        except OSError:
+            pass
     for folder in folders:
+        try:
+            folder = real_path(folder)
+        except Exception:  # noqa: BLE001
+            continue
         for ext in (".exe", ".cmd", ".bat", ""):
             candidate = folder / f"{name}{ext}"
-            try:
-                if candidate.is_file():
-                    return str(candidate)
-            except OSError:
-                # e.g. WinError 448 on app folders Windows protects (Codex's bin): it exists, it's installed
-                try:
-                    if candidate.name in {c.name for c in folder.iterdir()}:
-                        return str(candidate)
-                except OSError:
-                    pass
+            if _file(candidate):
+                return str(candidate)
     return None
+
+
+def set_custom_path(name: str, path: str) -> str:
+    """The buyer pastes where the app is (or the folder it's in). Checked, then remembered."""
+    if name not in ("claude", "codex", "gemini", "ollama"):
+        raise BoostError("Pick Claude, Codex, Gemini or Ollama.")
+    raw = Path(str(path).strip().strip('"').strip("'"))
+    if not str(raw).strip() or str(raw) == ".":
+        CUSTOM_PATHS.pop(name, None)
+    else:
+        found = None
+        for candidate in ([raw] if raw.suffix else []) + [raw / f"{name}{ext}" for ext in (".exe", ".cmd", ".bat")]:
+            resolved = real_path(candidate)
+            if _file(resolved):
+                found = resolved
+                break
+        if not found:
+            raise BoostError(f"No {name} program at that place. Paste the full path to {name}.exe (or .cmd), "
+                             f"e.g. what “where {name}” prints in a Command Prompt.")
+        CUSTOM_PATHS[name] = str(found)
+    if _PATHS_FILE[0]:
+        try:
+            Path(_PATHS_FILE[0]).write_text(json.dumps(CUSTOM_PATHS), encoding="utf-8")
+        except OSError:
+            pass
+    return CUSTOM_PATHS.get(name, "")
 
 
 # ---------------- settings + entry points ----------------
@@ -418,6 +495,11 @@ class Booster:
     def __init__(self, root: Path, api_client=None):
         self.path = Path(root) / "ai.json"
         self.api_client = api_client
+        _PATHS_FILE[0] = Path(root) / "ai-paths.json"
+        try:
+            CUSTOM_PATHS.update(json.loads(_PATHS_FILE[0].read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
 
     def settings(self) -> dict:
         try:
@@ -443,6 +525,7 @@ class Booster:
             "installed": {**{name: _has(name) for name in ("claude", "codex", "gemini")},
                           "local": _has("ollama") or bool(models)},
             "local_models": models,
+            "paths": {name: _safe_find(name) for name in ("claude", "codex", "gemini")},
         }
 
     def save(self, mode: str, key: str | None = None) -> dict:

@@ -281,6 +281,11 @@
             <button id="aiModelGet" class="primary small" type="button">⬇ Get the free AI model (2 GB, once)</button>
             <small id="aiLocalNote" class="muted"></small>
           </div>
+          <form id="aiPathForm" class="search ai-key" hidden>
+            <input id="aiPath" type="text" spellcheck="false" placeholder="Full path to the app" aria-label="Where the app is">
+            <button class="primary" type="submit">Use this</button>
+          </form>
+          <small id="aiPathHelp" class="muted" hidden></small>
           <form id="aiKeyForm" class="search ai-key" hidden>
             <input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-… (from console.anthropic.com)" aria-label="API key">
             <button class="primary" type="submit">Save</button>

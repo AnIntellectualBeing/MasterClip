@@ -84,3 +84,67 @@ def test_gpu_probe_runs_outside_the_engine(monkeypatch):
     monkeypatch.setattr("subprocess.run", fake_run)
     assert transcript._probe_gpu("base") is False
     assert "gpu_probe_main" in " ".join(seen["cmd"])
+
+
+def test_blocked_whole_stream_scan_falls_back_to_the_time_range(tmp_path, monkeypatch):
+    """Friend, 23 Nov: 'The hot parts didn't download' ended the job. Now the shown range is used."""
+    import threading
+
+    import clipstudio.app as module
+    from clipstudio import sources
+
+    def blocked(*a, **k):
+        raise sources.HotPartsFailed("YouTube is asking for a sign-in check right now.")
+
+    seen = {}
+
+    def import_url(url, folder, capture, event, progress, section=None, **k):
+        seen["section"] = section
+        raise RuntimeError("stop here")  # the rest of analyze is covered elsewhere
+
+    monkeypatch.setattr(sources, "import_hotspots", blocked)
+    monkeypatch.setattr(module, "import_url", import_url)
+    job = module.store.create("QA", source_path=None, section={"hot": True, "fallback": [4277, 4877]})
+    module.events[job["id"]] = threading.Event()
+    module.analyze(job["id"], module.SourceRequest(source_type="url", source="https://www.youtube.com/watch?v=abcdefghijk"))
+    assert seen["section"] == (4277.0, 4877.0)
+    assert any("whole-stream scan" in w for w in module.store.get(job["id"])["warnings"])
+
+
+def test_codex_found_through_nested_junctions_without_walking_them(tmp_path, monkeypatch):
+    """Owner, 23 Nov: Codex's bin is a junction to a junction; the installed app may not walk through them."""
+    import subprocess
+    from pathlib import Path
+
+    real = tmp_path / "releases" / "0.1" / "bin"
+    real.mkdir(parents=True)
+    (real / "codex.exe").write_text("x")
+    current = tmp_path / "current"
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(current), str(tmp_path / "releases" / "0.1")], check=True, capture_output=True)
+    link = tmp_path / "bin"
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(current / "bin")], check=True, capture_output=True)
+    try:
+        resolved = boost.real_path(link / "codex.exe")
+        assert resolved == real / "codex.exe"
+        assert "current" not in str(resolved) and str(link) not in str(resolved)
+    finally:
+        import os
+
+        os.rmdir(link)
+        os.rmdir(current)
+
+
+def test_buyer_can_paste_where_the_app_is(tmp_path, monkeypatch):
+    monkeypatch.setattr(boost.shutil, "which", lambda name: None)
+    monkeypatch.setattr(boost, "CUSTOM_PATHS", {})
+    monkeypatch.setattr(boost, "_PATHS_FILE", [tmp_path / "ai-paths.json"])
+    folder = tmp_path / "Weird Place"
+    folder.mkdir()
+    (folder / "codex.cmd").write_text("@echo off")
+    import pytest
+
+    with pytest.raises(boost.BoostError):
+        boost.set_custom_path("codex", str(tmp_path / "nothing-here"))
+    boost.set_custom_path("codex", f'"{folder}"')  # a folder, with quotes from Explorer's copy-as-path
+    assert boost.find_app("codex").endswith("codex.cmd")
+    assert "codex" in (tmp_path / "ai-paths.json").read_text()

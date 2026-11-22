@@ -94,6 +94,11 @@ def friendly_error(log_text: str, fallback: str) -> str:
     return fallback
 
 
+def _last_error_line(log: str) -> str:
+    lines = [l.strip() for l in (log or "").splitlines() if "ERROR" in l]
+    return lines[-1].replace("ERROR:", "").strip()[:160] if lines else ""
+
+
 def _log_tail(path) -> str:
     try:
         return Path(path).read_text(encoding="utf-8", errors="replace")[-4000:]
@@ -642,6 +647,10 @@ def _concat(parts, target, cancel_event, folder):
                         "-movflags", "+faststart", str(target)], folder / "concat.log", cancel_event, timeout=7200)
 
 
+class HotPartsFailed(MediaError):
+    """None of the hot parts downloaded (the caller falls back to a plain time range)."""
+
+
 def import_hotspots(url, folder, cancel_event, progress, max_height=1080):
     """Download only the hottest parts of a long VOD. Returns (path, title, chat in joined-video
     seconds or None, parts [(vod start, vod end, joined start)])."""
@@ -699,9 +708,19 @@ def import_hotspots(url, folder, cancel_event, progress, max_height=1080):
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         files = list(pool.map(grab, enumerate(windows)))
+    missing = [i for i, f in enumerate(files) if not (f and f.is_file() and f.stat().st_size > 0)]
+    if missing and len(missing) == len(windows):
+        # Three downloads at once can trip YouTube's bot check: try again one at a time.
+        progress(0.1, "Trying the hot parts again, one at a time")
+        for i in missing:
+            if cancel_event and cancel_event.is_set():
+                raise MediaError("Cancelled.")
+            time.sleep(2)
+            files[i] = grab((i, windows[i]))
     files_ok = [(f, w) for f, w in zip(files, windows) if f and f.is_file() and f.stat().st_size > 0]
     if not files_ok:
-        raise MediaError("The hot parts didn't download. Try a time range instead.")
+        log = "\n".join(_log_tail(folder / f"import-{i:02}.log") for i in range(len(windows)))
+        raise HotPartsFailed(friendly_error(log, _last_error_line(log) or "YouTube refused the part downloads"))
     parts, joined = [], 0.0
     for f, (start, end) in files_ok:
         try:
