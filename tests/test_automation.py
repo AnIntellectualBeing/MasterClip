@@ -91,6 +91,18 @@ def test_retry_keeps_post_identity_and_successful_platform_is_not_resent(poster,
     assert calls[1]["idempotency_key"] == yt["key"]
 
 
+def test_interrupted_upload_resumes_with_the_same_post_identity(poster, tmp_path):
+    poster.set_key("zk_good_key_123456")
+    row = poster.add([{"file": video(tmp_path), "only": ["youtube"]}], "now")[0]
+    poster._update(row["id"], status="uploading", media_url="https://cdn/already-uploaded.mp4")
+    poster.recover()
+    poster.send(row["id"])
+    post = next(p for k, p in poster.log if k == "post")
+    assert post["idempotency_key"] == row["key"]
+    assert post["video_url"] == "https://cdn/already-uploaded.mp4"
+    assert not any(k == "upload" for k, _ in poster.log)
+
+
 def test_cancel_scheduled_post_cancels_remote_before_removing_local(poster, tmp_path):
     poster.set_key("zk_good_key_123456")
     row = poster.add([{"file": video(tmp_path), "only": ["youtube"]}], "now")[0]
@@ -164,4 +176,3 @@ def test_hourly_schedule_spreads_clips_and_skips_taken_times():
     now = dt.datetime(2026, 11, 22, 6, 30, tzinfo=dt.timezone.utc)  # noon
     times = next_free_slots(settings, ["2026-11-22T12:15"], 3, now)
     assert times == ["2026-11-22T12:30", "2026-11-22T12:45", "2026-11-22T13:00"]
-

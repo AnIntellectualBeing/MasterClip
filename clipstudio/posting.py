@@ -482,6 +482,15 @@ class Poster:
             self.kick()
 
     # ---- worker ----
+    def recover(self):
+        """An interrupted request reuses its durable key to reconcile instead of duplicating a post."""
+        with self.lock:
+            items = self.queue()
+            for item in items:
+                if item["status"] == "uploading":
+                    item["status"] = "waiting"
+            self._save_queue(items)
+
     def kick(self):
         with self.lock:
             self.wake.set()

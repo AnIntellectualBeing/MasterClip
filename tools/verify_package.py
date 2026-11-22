@@ -19,6 +19,13 @@ out.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix="masterclip-package-") as temp:
     env = dict(os.environ, LOCALAPPDATA=temp, CLIPSTUDIO_VAULT="memory", CLIPSTUDIO_DATA=str(Path(temp) / "projects"),
                CLIPSTUDIO_LOGS=str(Path(temp) / "Clip Studio"), CLIPSTUDIO_ZERNIO_API="http://127.0.0.1:1/never-called")
+    queue_root = Path(env["CLIPSTUDIO_DATA"])
+    queue_root.mkdir(parents=True)
+    (queue_root / "posting-queue.json").write_text(json.dumps([{
+        "id": "interrupted-qa", "status": "uploading", "only": ["youtube"], "accounts": {"youtube": "qa"},
+        "file": "not-needed.mp4", "title": "Restart QA", "caption": "QA", "when": None,
+        "slot": 1, "key": "qa-stable-post-id", "post_id": None, "dm": "off", "links": {},
+    }]), encoding="utf-8")
     child = subprocess.Popen([str(exe), "--headless"], env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     try:
         log = Path(temp) / "Clip Studio" / "app.log"
@@ -38,6 +45,13 @@ with tempfile.TemporaryDirectory(prefix="masterclip-package-") as temp:
         assert health["ffmpeg"] and health["ffprobe"] and health["speech"]
         assert requests.get(base + "/api/speech-model").json()["state"] == "bundled"
         assert requests.get(base + "/api/post/status").json()["ready"] is False
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            recovered = requests.get(base + "/api/post/queue").json()["items"][0]
+            if recovered["status"] != "uploading":
+                break
+            time.sleep(0.1)
+        assert recovered["status"] == "failed" and "key" in recovered["error"].lower(), recovered
         assert "anintellectualcompany.contact@gmail.com" in requests.get(base + "/help").text
         errors = []
         with sync_playwright() as pw:
@@ -84,7 +98,7 @@ with tempfile.TemporaryDirectory(prefix="masterclip-package-") as temp:
         assert len(clip.content) > 1000
         (out / "packaged-export.mp4").write_bytes(clip.content)
         report = dict(health=health, clips=len(job["clips"]), speech_model="bundled", browser_errors=errors,
-                      export_bytes=len(clip.content), no_real_accounts=True)
+                      export_bytes=len(clip.content), no_real_accounts=True, resumed_interrupted_upload=True)
         (out / "result.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(json.dumps(report, indent=2), flush=True)
     finally:

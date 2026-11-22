@@ -39,6 +39,7 @@ my_templates = MyTemplates(store.root)
 
 @asynccontextmanager
 async def lifespan(app):
+    poster.recover()
     poster.kick()
     yield
     for event in events.values():

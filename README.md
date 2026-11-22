@@ -6,7 +6,7 @@ Paste a stream link (or search for one), pick a template, and MasterClip finds t
 vertical Shorts with the streamer's cam on top and gameplay below, adds word-by-word captions and a title, and can
 post them to Instagram Reels and YouTube Shorts for you.
 
-Get the ready-to-run Windows installer at **[anintellectualcompany.com/software/MasterClip-Tool](https://anintellectualcompany.com/software/MasterClip-Tool/)**.
+Get the ready-to-run Windows installer from **[the latest GitHub release](https://github.com/AnIntellectualBeing/MasterClip/releases/latest)**. Product information: [anintellectualcompany.com/software/MasterClip-Tool](https://anintellectualcompany.com/software/MasterClip-Tool/).
 
 Windows shows “Windows protected your PC”? This release is unsigned. See the [installation guide](docs/WINDOWS-HELP.md). Support: **anintellectualcompany.contact@gmail.com**.
 
