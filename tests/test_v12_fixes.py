@@ -1,5 +1,9 @@
 """Owner's 1.1 complaints: AI apps not found, Local AI error, auto-post vs minutes, blurry corner cam."""
 
+import sys
+
+import pytest
+
 from clipstudio import boost
 from clipstudio.design import cam_cover, template_design
 
@@ -31,6 +35,7 @@ def test_huge_cam_detection_is_not_blurred_over_the_gameplay():
     assert cam_cover(small, (0, 0, 1920, 1080), 1920, 1080) is not None
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only: .exe apps and NTFS junctions")
 def test_protected_app_folder_does_not_crash_ai_status(tmp_path, monkeypatch):
     """WinError 448 on Codex's bin folder crashed /api/ai, so no AI button worked (1.2.0)."""
     from pathlib import Path
@@ -111,6 +116,7 @@ def test_blocked_whole_stream_scan_falls_back_to_the_time_range(tmp_path, monkey
     assert any("whole-stream scan" in w for w in module.store.get(job["id"])["warnings"])
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only: .exe apps and NTFS junctions")
 def test_codex_found_through_nested_junctions_without_walking_them(tmp_path, monkeypatch):
     """Owner, 23 Nov: Codex's bin is a junction to a junction; the installed app may not walk through them."""
     import subprocess
