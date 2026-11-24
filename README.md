@@ -10,6 +10,11 @@ Get the ready-to-run Windows installer from **[the latest GitHub release](https:
 
 Windows shows “Windows protected your PC”? This release is unsigned. See the [installation guide](docs/WINDOWS-HELP.md). Support: **anintellectualcompany.contact@gmail.com**.
 
+### New in 1.4
+
+- **Save folder:** click **📁 Save folder** at the top and pick any folder, like `D:\MasterClip`. Finished clips and the temporary downloads both go there, so a full C: drive no longer breaks a job.
+- MasterClip checks for at least 2 GB free before it starts, and says so in plain words if the disk is full. Other download errors now show the real reason, which helps support.
+
 ### New in 1.1
 
 - **Continuous live clipping:** scans each new minute until Stop or the stream ends. No total clip target. Use **New window** for another stream while the first keeps recording.
