@@ -4,6 +4,7 @@ import ipaddress
 import json
 import math
 import os
+import re
 import socket
 import subprocess
 import tempfile
@@ -73,6 +74,10 @@ def child_env() -> dict:
 
 
 _FRIENDLY = (
+    (("no space left", "errno 28", "not enough space", "disk is full", "winerror 112", "there is not enough space"),
+     "Your disk is full, so the video couldn't be saved. Click \U0001f4c1 Save folder at the top and pick another drive (like D:), or free some space."),
+    (("permission denied", "winerror 5", "access is denied"),
+     "MasterClip isn't allowed to save in its folder. Click \U0001f4c1 Save folder at the top and pick another folder."),
     (("private video", "this video is private"), "This video is private, so it can't be opened."),
     (("members-only", "join this channel", "members only"), "This video is for channel members only. Pick another one."),
     (("sign in to confirm your age", "age-restricted", "age restricted"), "YouTube needs a signed-in, age-checked account for this video. Pick another one."),
@@ -91,7 +96,11 @@ def friendly_error(log_text: str, fallback: str) -> str:
     for needles, message in _FRIENDLY:
         if any(needle in text for needle in needles):
             return message
-    return fallback
+    # Unknown reason: add the downloader's own last error line (links removed, they can be signed)
+    # so a buyer's screenshot tells support what actually happened.
+    reason = re.sub(r"https?://\S+", "[link]", _last_error_line(log_text or ""))
+    reason = re.sub(r"\[[\w:]+\]\s*", "", reason, count=1).strip()
+    return f"{fallback} (Reason: {reason[:140]})" if reason else fallback
 
 
 def _last_error_line(log: str) -> str:

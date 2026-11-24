@@ -222,6 +222,19 @@ class DesktopWindows:
                                    js_api=self)
         return {"opened": True}
 
+    def pick_folder(self, start=""):
+        """Windows' own folder picker for the Save folder setting. Returns the path or ""."""
+        try:
+            window = self.backend.active_window() or self.backend.windows[0]
+            kind = getattr(getattr(self.backend, "FileDialog", None), "FOLDER", None) or self.backend.FOLDER_DIALOG
+            picked = window.create_file_dialog(kind, directory=start or "")
+        except Exception as error:  # noqa: BLE001 - the page falls back to a typed path
+            logging.warning("folder picker failed: %s", error)
+            return ""
+        if not picked:
+            return ""
+        return str(picked[0] if isinstance(picked, (list, tuple)) else picked)
+
 
 def main():
     folder = data_dir()

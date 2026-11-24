@@ -4,6 +4,7 @@ import json
 import math
 import os
 import shutil
+import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
@@ -15,6 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, field_validator
+from . import storage
 from .jobs import JobStore, ACTIVE
 from .mytemplates import MyTemplates
 from .searches import Searches
@@ -29,7 +31,24 @@ from .engine import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-store = JobStore(os.environ.get("CLIPSTUDIO_DATA", str(ROOT / "data")))
+_DATA = Path(os.environ.get("CLIPSTUDIO_DATA", str(ROOT / "data")))
+store = JobStore(_DATA, storage.work_root(_DATA), storage.old_work_roots())
+
+
+def _use_temp_in(folder: Path):
+    """Python, FFmpeg and yt-dlp scratch files follow the work folder, so a full C: drive doesn't break jobs."""
+    if storage.chosen_folder() is None:
+        return
+    temp = Path(folder) / "temp"
+    try:
+        temp.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    tempfile.tempdir = str(temp)
+    os.environ["TEMP"] = os.environ["TMP"] = str(temp)
+
+
+_use_temp_in(store.work_root)
 pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="clip-worker")
 events: dict[str, threading.Event] = {}
 busy = threading.Lock()
@@ -928,6 +947,7 @@ def enqueue_source(options: SourceRequest, extra=None):
                 raise ValueError("Unsupported video extension.")
         else:
             validate_url(options.source)
+        storage.ensure_room(store.work_root, output_folder())
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     job = store.create(
@@ -966,6 +986,10 @@ def enqueue_upload(file, transcribe=True, language="auto", model="base", extra=N
         )
     except ValueError:
         raise HTTPException(400, "Invalid speech options")
+    try:
+        storage.ensure_room(store.work_root, output_folder())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     job = store.create(
         Path(file.filename).name,
         options=options.model_dump(exclude={"source"}),
@@ -1087,7 +1111,14 @@ def create_project(options: ProjectRequest):
 
 
 def output_folder() -> Path:
-    """Where finished clips are saved (Videos\\MasterClip unless set in Settings)."""
+    """Where finished clips are saved: the buyer's chosen folder, else Videos\\MasterClip."""
+    chosen = storage.chosen_folder()
+    if chosen is not None:
+        try:
+            chosen.mkdir(parents=True, exist_ok=True)
+            return chosen
+        except OSError:
+            pass  # the chosen drive is unplugged: fall back to the default
     try:
         settings = json.loads((ROOT / "settings.json").read_text(encoding="utf-8"))
         custom = str(settings.get("output_folder") or "").strip()
@@ -1205,6 +1236,42 @@ def open_logs():
     folder = logs_dir()
     _open_in_explorer(folder)
     return dict(folder=str(folder))
+
+
+class StorageRequest(BaseModel):
+    folder: str | None = None
+
+
+def _storage_info():
+    chosen = storage.chosen_folder()
+    clips = output_folder()
+    free = storage.free_bytes(store.work_root)
+    return dict(
+        folder=str(chosen) if chosen else None,
+        clips_folder=str(clips),
+        work_folder=str(store.work_root),
+        default_clips=str(Path.home() / "Videos" / "MasterClip"),
+        free=storage.gb(free),
+        drive=storage.drive_name(store.work_root),
+        low=free is not None and free < storage.MIN_FREE_BYTES,
+    )
+
+
+@app.get("/api/storage")
+def get_storage():
+    return _storage_info()
+
+
+@app.post("/api/storage")
+def set_storage(body: StorageRequest):
+    folder = (body.folder or "").strip().strip('"') or None
+    try:
+        storage.set_folder(folder, store.work_root)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    store.set_work_root(storage.work_root(_DATA))
+    _use_temp_in(store.work_root)
+    return _storage_info()
 
 
 @app.post("/api/open-output")

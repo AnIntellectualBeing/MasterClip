@@ -31,6 +31,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 5h-3v6h-4V8H7zM5 15h2v3h10v-3h2v5H5z"/></svg>
         Posting <i id="postingDot" class="dot" hidden></i>
       </button>
+      <button id="openStorage" class="ghost" type="button" title="Choose where clips and downloads are saved (use another drive if C: is full)">📁 Save folder <i id="storageDot" class="dot" hidden></i></button>
       <button id="openFolder" class="ghost" type="button" title="Open the folder with your saved clips">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         My clips
@@ -497,6 +498,29 @@
         <div class="row-between">
           <button id="schedCancel" class="ghost" type="button">Cancel</button>
           <button id="schedGo" class="primary big" type="button">Schedule</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="storageDlg" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="storageTitle">
+    <div class="editor-shell sched-shell">
+      <header class="editor-top">
+        <strong id="storageTitle">Where should MasterClip save?</strong>
+        <button id="storageClose" class="ghost" type="button" aria-label="Close">✕</button>
+      </header>
+      <div class="sched-body">
+        <p class="muted">Clips are saved here, and videos are downloaded here while clips are made. If your C: drive is full, pick a folder on another drive, like <b>D:\MasterClip</b>.</p>
+        <label class="field"><span>Save folder</span><input type="text" id="storagePath" spellcheck="false" placeholder="D:\MasterClip"></label>
+        <div class="row-between" style="margin-top:0">
+          <button id="storageBrowse" class="ghost" type="button">Browse…</button>
+          <button id="storageDefault" class="ghost" type="button">Use the default (C:)</button>
+        </div>
+        <p id="storageNow" class="hint"></p>
+        <p id="storageMsg" class="hint" role="status" style="color:#c0392b;font-weight:600"></p>
+        <div class="row-between">
+          <button id="storageCancel" class="ghost" type="button">Cancel</button>
+          <button id="storageSave" class="primary big" type="button">Save</button>
         </div>
       </div>
     </div>

@@ -866,6 +866,53 @@ $("#saveAll").addEventListener("click", async () => {
     toast(`Saved ${r.files.length} clips to ${r.folder}`);
   } catch (err) { notice(err.message); }
 });
+// ---- Save folder (clips + downloads can live on another drive) ----
+const storageUi = {
+  info: null,
+  paint(info) {
+    this.info = info;
+    $("#storageDot").hidden = !info.low;
+    $("#storageNow").textContent = `Clips go to ${info.clips_folder}. ${info.free} free on the ${info.drive}.`
+      + (info.low ? " That's almost full: pick another drive." : "");
+  },
+  async refresh() {
+    try { this.paint(await api("/api/storage")); } catch { /* engine still starting */ }
+  },
+  async open() {
+    $("#storageMsg").textContent = "";
+    await this.refresh();
+    $("#storagePath").value = (this.info && this.info.folder) || "";
+    $("#storageDlg").hidden = false;
+    $("#storagePath").focus();
+  },
+  close() { $("#storageDlg").hidden = true; },
+  async save(folder) {
+    $("#storageMsg").textContent = "Checking the folder…";
+    try {
+      const info = await api("/api/storage", { method: "POST", body: { folder } });
+      this.paint(info);
+      this.close();
+      toast(info.folder ? `Clips will be saved in ${info.folder}` : "Clips will be saved in Videos\MasterClip");
+    } catch (err) { $("#storageMsg").textContent = err.message; }
+  },
+};
+$("#openStorage").addEventListener("click", () => storageUi.open());
+$("#storageClose").addEventListener("click", () => storageUi.close());
+$("#storageCancel").addEventListener("click", () => storageUi.close());
+$("#storageDefault").addEventListener("click", () => storageUi.save(null));
+$("#storageSave").addEventListener("click", () => storageUi.save($("#storagePath").value.trim() || null));
+$("#storagePath").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#storageSave").click(); });
+$("#storageBrowse").addEventListener("click", async () => {
+  const api_ = window.pywebview && window.pywebview.api;
+  if (api_ && api_.pick_folder) {
+    const picked = await api_.pick_folder($("#storagePath").value.trim());
+    if (picked) $("#storagePath").value = picked;
+  } else {
+    $("#storageMsg").textContent = "Type the folder path in the box, for example D:\MasterClip.";
+  }
+});
+storageUi.refresh();
+window.ClipStorage = storageUi;
 $("#openFolder").addEventListener("click", async () => {
   try { const r = await api("/api/open-output", { method: "POST" }); toast(`Opened ${r.folder}`); } catch (err) { notice(err.message); }
 });
