@@ -23,6 +23,11 @@ You do NOT need this code folder. Use the ready-made installer (.exe).
    https://github.com/AnIntellectualBeing/MasterClip/releases/latest/download/MasterClipSetup.exe
    (about 337 MB)
 
+   INSTALLER NOT WORKING? (won't install, won't open, shows an error)
+   Download the newest version from our official site, which always
+   has the latest fixed version:
+   https://anintellectualcompany.com/software/MasterClip-Tool/
+
 2. If Chrome says the file "isn't commonly downloaded": click the
    three dots next to it, then "Keep".
 
