@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, field_validator
 from . import storage
+from . import campaigns as camp
 from .jobs import JobStore, ACTIVE
 from .mytemplates import MyTemplates
 from .searches import Searches
@@ -190,6 +191,8 @@ class Recipe(BaseModel):
     auto_post: bool = False
     posting_slot: int = Field(default=0, ge=0, le=30)
     resolution: Literal[720, 1080, 2160] = 1080
+    # Set when the clips are made for a campaign (Campaigns > Clip for this).
+    campaign_id: str | None = Field(default=None, max_length=80)
 
 
 def validate_auto_post(recipe):
@@ -1272,6 +1275,48 @@ def set_storage(body: StorageRequest):
     store.set_work_root(storage.work_root(_DATA))
     _use_temp_in(store.work_root)
     return _storage_info()
+
+
+submissions = camp.Submissions(_DATA)
+
+
+class SubmissionBody(BaseModel):
+    campaign_id: str | None = Field(default=None, max_length=80)
+    clip_name: str | None = Field(default=None, max_length=300)
+    posted_url: str | None = Field(default=None, max_length=500)
+    posted_at: str | None = Field(default=None, max_length=40)
+    views: int | None = Field(default=None, ge=0, le=10**10)
+
+
+def _campaign_view(fetch=None):
+    feed = camp.load_feed(_DATA, fetch=fetch)
+    return feed, submissions.summary(feed["campaigns"])
+
+
+@app.get("/api/campaigns")
+def get_campaigns():
+    feed, mine = _campaign_view()
+    return dict(feed, **mine)
+
+
+@app.post("/api/campaigns/submissions")
+def add_submission(body: SubmissionBody):
+    item = submissions.add(**body.model_dump())
+    return dict(item=item, **_campaign_view(lambda: None)[1])
+
+
+@app.put("/api/campaigns/submissions/{sid}")
+def update_submission(sid: str, body: SubmissionBody):
+    if submissions.update(sid, **body.model_dump()) is None:
+        raise HTTPException(404, "That entry is gone.")
+    return _campaign_view(lambda: None)[1]
+
+
+@app.delete("/api/campaigns/submissions/{sid}")
+def delete_submission(sid: str):
+    if not submissions.delete(sid):
+        raise HTTPException(404, "That entry is gone.")
+    return _campaign_view(lambda: None)[1]
 
 
 @app.post("/api/open-output")

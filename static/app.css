@@ -653,3 +653,30 @@ kbd { font: 700 12px/1 "Segoe UI", system-ui, sans-serif; background: #fff; bord
 .ai-local { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
 
 .queue-note { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: #fff6e5; border: 1px solid #f0d49a; font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Campaigns */
+.camp-shell { max-width: 960px; }
+.camp-body { padding: 18px 22px 26px; overflow: auto; flex: 1; }
+.camp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+.camp-card { background: #fff; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; }
+.camp-card .poster { height: 120px; background: var(--brand-soft) center / cover; display: grid; place-items: center; font-size: 34px; }
+.camp-card .inner { padding: 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.camp-card h4 { margin: 0; font-size: 17px; }
+.camp-pay { font-weight: 800; color: var(--brand-dark); font-size: 20px; }
+.camp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.camp-chips span { background: var(--soft); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.camp-card ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.camp-card .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+.camp-card .btns a, .camp-card .btns button { text-decoration: none; font-size: 14px; padding: 9px 14px; }
+.camp-h { margin: 24px 0 10px; font-size: 16px; }
+.camp-total { display: flex; justify-content: space-between; align-items: center; background: var(--brand-soft); border-radius: 16px; padding: 14px 18px; margin-bottom: 14px; }
+.camp-total strong { font-size: 24px; color: var(--brand-dark); }
+.camp-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px 100px auto; gap: 10px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; }
+.camp-row input { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.camp-row small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camp-row .est { font-weight: 700; text-align: right; }
+.camp-form { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 12px; display: grid; gap: 8px; }
+.camp-form input, .camp-form select { padding: 9px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.camp-banner { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 14px; border-radius: 14px; background: var(--brand-soft); font-weight: 600; }
+.camp-banner[hidden] { display: none; }
+@media (max-width: 640px) { .camp-row { grid-template-columns: 1fr 1fr; } }

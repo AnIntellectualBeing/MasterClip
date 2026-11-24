@@ -533,5 +533,6 @@
     return `make ${len}-second Shorts (9:16) with ${names}`;
   }
 
-  window.ClipDesigner = { init, enter, setKind, payload, summary, captionsOn, get kind() { return D.kind; }, set onPick(fn) { D.onPick = fn; } };
+  function ensureCaptions() { if (!captionsOn()) capSet({ style: "pop" }); }
+  window.ClipDesigner = { init, enter, ensureCaptions, setKind, payload, summary, captionsOn, get kind() { return D.kind; }, set onPick(fn) { D.onPick = fn; } };
 })();

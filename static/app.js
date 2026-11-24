@@ -469,6 +469,7 @@ function renderSummary() {
 function recipePayload() {
   return { ...window.ClipDesigner.payload(), length: state.recipe.length, count: state.recipe.count, auto_post: state.autoPost === true,
     posting_slot: window.ClipPosting ? window.ClipPosting.sessionSlot() : 0,
+    campaign_id: state.campaign ? state.campaign.id : null,
     resolution: state.source && state.source.info && state.source.info.is_live ? 1080 : Number($("#exportQuality").value) };
 }
 // First screen: auto-post every clip, or pick by hand.
@@ -858,7 +859,7 @@ async function saveClip(jobId, index, edit) {
     watchJob(jobId);
   } catch (err) { notice(err.message); }
 }
-window.ClipStudio = { api, saveClip, toast, notice, clock, state, el, watchJob };
+window.ClipStudio = { api, saveClip, toast, notice, clock, state, el, watchJob, go, pickUrl, runSearch, setLength };
 
 $("#saveAll").addEventListener("click", async () => {
   try {
@@ -917,6 +918,7 @@ $("#openFolder").addEventListener("click", async () => {
   try { const r = await api("/api/open-output", { method: "POST" }); toast(`Opened ${r.folder}`); } catch (err) { notice(err.message); }
 });
 $("#startOver").addEventListener("click", () => {
+  if (window.ClipCampaigns) window.ClipCampaigns.clear();
   state.job = null;
   state.source = null;
   $("#picked").hidden = true;

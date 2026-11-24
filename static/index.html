@@ -13,6 +13,7 @@
   <script src="/static/designer.js" defer></script>
   <script src="/static/app.js" defer></script>
   <script src="/static/posting.js" defer></script>
+  <script src="/static/campaigns.js" defer></script>
   <script src="/static/longvideo.js" defer></script>
   <script src="/static/aiboost.js" defer></script>
   <script src="/static/licence.js" defer></script>
@@ -31,6 +32,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 5h-3v6h-4V8H7zM5 15h2v3h10v-3h2v5H5z"/></svg>
         Posting <i id="postingDot" class="dot" hidden></i>
       </button>
+      <button id="openCampaigns" class="ghost" type="button" title="Clipping campaigns that pay per views, and your posted clips">💰 Campaigns</button>
       <button id="openStorage" class="ghost" type="button" title="Choose where clips and downloads are saved (use another drive if C: is full)">📁 Save folder <i id="storageDot" class="dot" hidden></i></button>
       <button id="openFolder" class="ghost" type="button" title="Open the folder with your saved clips">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
@@ -45,6 +47,8 @@
       <li data-step="2"><span class="dot">2</span><span class="label">Design</span></li>
       <li data-step="3"><span class="dot">3</span><span class="label">Find hype moments</span></li>
     </ol>
+
+    <div id="campBanner" class="notice-soft camp-banner" hidden><span id="campBannerText"></span><button id="campBannerX" class="ghost small" type="button">Stop</button></div>
 
     <div id="notice" class="notice" role="alert" hidden><span id="noticeText"></span><button id="noticeClose" type="button" aria-label="Close">×</button></div>
 
@@ -498,6 +502,35 @@
         <div class="row-between">
           <button id="schedCancel" class="ghost" type="button">Cancel</button>
           <button id="schedGo" class="primary big" type="button">Schedule</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="campDlg" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="campTitle">
+    <div class="editor-shell camp-shell">
+      <header class="editor-top">
+        <strong id="campTitle">Campaigns</strong>
+        <button id="campClose" class="ghost" type="button" aria-label="Close">✕</button>
+      </header>
+      <div class="camp-body">
+        <div class="tabs small" role="tablist">
+          <button class="tab active" role="tab" data-camp="list" type="button">Campaigns</button>
+          <button class="tab" role="tab" data-camp="mine" type="button">My submissions</button>
+        </div>
+        <div id="campList">
+          <p id="campEmpty" class="soft-state" hidden>New campaigns are added here. Meanwhile, join a platform below.</p>
+          <div id="campCards" class="camp-grid"></div>
+          <h3 class="camp-h">Platforms that pay per views</h3>
+          <div id="campPlatforms" class="camp-grid"></div>
+          <p id="campSrc" class="hint"></p>
+        </div>
+        <div id="campMine" hidden>
+          <div class="camp-total"><span>Estimated earnings <small>(estimate, not paid money)</small></span><strong id="campTotal">$0.00</strong></div>
+          <div id="campRows"></div>
+          <p id="campMineEmpty" class="soft-state" hidden>Nothing here yet. After you post a clip, add its link and type the views.</p>
+          <button id="campAdd" class="primary" type="button">Add a posted link</button>
+          <p class="hint">Estimate = views / 1000 x the campaign's rate per 1K views. The platform's own count is the one that pays.</p>
         </div>
       </div>
     </div>

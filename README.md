@@ -10,6 +10,12 @@ Get the ready-to-run Windows installer from **[the latest GitHub release](https:
 
 Windows shows “Windows protected your PC”? This release is unsigned. See the [installation guide](docs/WINDOWS-HELP.md). Support: **anintellectualcompany.contact@gmail.com**.
 
+### New in 1.5
+
+- **💰 Campaigns:** a list of clipping campaigns that pay per views, and sites that run them. **Clip for this** fills in step 1 with the campaign's source, sets the clip length, turns captions on and shows a "Campaign" banner.
+- **My submissions:** add the link of a clip you posted, type its views, and see an estimate of what it earns (views / 1000 x the campaign's rate). The total is only an estimate. The platform's own count pays.
+- The list comes from our own feed (anintellectualcompany.com/campaigns.json). Offline, MasterClip shows the last saved list.
+
 ### New in 1.4
 
 - **Save folder:** click **📁 Save folder** at the top and pick any folder, like `D:\MasterClip`. Finished clips and the temporary downloads both go there, so a full C: drive no longer breaks a job.
