@@ -1,0 +1,95 @@
+MASTERCLIP - START HERE
+=======================
+
+MasterClip turns live and past streams into vertical Reels and Shorts with
+captions and titles, and can post them to Instagram and YouTube for you.
+It is free and open source.
+
+Support (questions, problems, bugs):
+  anintellectualcompany.contact@gmail.com
+  Bought the guide? Put your payment ID (starts with pay_) in the email.
+
+Source code:
+  https://github.com/AnIntellectualBeing/MasterClip
+
+
+-----------------------------------------------------------------------
+A) I JUST WANT TO USE IT (most people)
+-----------------------------------------------------------------------
+
+You do NOT need this code folder. Use the ready-made installer (.exe).
+
+1. Download MasterClipSetup.exe on a Windows 10 or 11 PC:
+   https://github.com/AnIntellectualBeing/MasterClip/releases/latest/download/MasterClipSetup.exe
+   (about 337 MB)
+
+2. If Chrome says the file "isn't commonly downloaded": click the
+   three dots next to it, then "Keep".
+
+3. Double-click MasterClipSetup.exe.
+   If Windows says "Windows protected your PC": click "More info",
+   then "Run anyway". (The app is not signed with a paid certificate.
+   That is all this message means.)
+
+4. Click Next until it finishes, then open MasterClip from the
+   Start menu or the desktop.
+
+5. Make your first clips:
+   - Pick "Short video" (for Reels and Shorts).
+   - Click "Find streams", type a game or streamer, press Search.
+   - Pick a stream (red LIVE badge = live; past streams work too).
+     For past streams, take a short part: it processes much faster.
+   - Pick a template, then click "Find hype moments".
+   - Edit, download or post each clip.
+
+6. Auto-posting (optional):
+   - Make a free account on https://zernio.com and connect your
+     Instagram and YouTube there.
+   - In Zernio open Developers > API Keys (left menu), create a key and copy it.
+   - In MasterClip click "Posting", paste the key, press "Test & save".
+   - Choose "Auto-post every clip" on the first screen.
+   - Safe limits per account: Instagram up to 10 posts a day,
+     YouTube up to 50 a day.
+   - More accounts: make another Zernio account and add its key with
+     "+ Add" in Posting.
+
+Tips:
+   - It works without AI. Turning on "AI boost" makes it pick moments
+     and write titles better.
+   - Speed depends on your PC. A short part of a stream is faster.
+   - Only clip streams you have the right to use, and credit the
+     streamer.
+
+The full step-by-step guide with screenshots (MasterClip Complete Guide
+PDF) is on your downloads page if you bought the kit.
+
+
+-----------------------------------------------------------------------
+B) I WANT TO RUN OR BUILD IT FROM THE CODE (developers)
+-----------------------------------------------------------------------
+
+The full source code is in this folder (or download it as a .zip from
+GitHub: https://github.com/AnIntellectualBeing/MasterClip ).
+
+You need: Windows 10/11, Python 3.11 or newer, and FFmpeg (with ffprobe)
+on your PATH.
+
+1. Open the folder that contains run.py and Setup.cmd.
+2. Double-click Setup.cmd once. It creates a Python virtual environment
+   and installs everything from requirements.txt.
+3. Double-click Start.cmd to open MasterClip.
+
+Run the tests:        python -m pytest -q
+Build the installer:  packaging\build.ps1   (needs Inno Setup 6)
+
+Folder map:
+   run.py / desktop.py   start the app
+   clipstudio\           the app's code (server, clipping, posting)
+   static\               the app's screens (HTML, CSS, JS)
+   packaging\            installer build (PyInstaller + Inno Setup)
+   tests\                tests
+   docs\                 extra help (docs\WINDOWS-HELP.md)
+
+Licence: see LICENSE and NOTICE in this folder.
+
+Stuck? Email anintellectualcompany.contact@gmail.com
