@@ -24,8 +24,16 @@
 
   const D = {
     kind: "short", focus: "short", formats: {}, stages: {}, defaults: null, templates: [], fonts: [],
-    media: null, credit: "", raf: 0, words: [], loop: 8, onPick: null,
+    media: null, credit: "", raf: 0, words: [], loop: 8, onPick: null, extras: null,
   };
+  // Cards / My brand / Outro & music stay as the buyer set them when another built-in template is picked,
+  // and come back next time (kept in this browser). The buyer's own templates bring their own.
+  const EXTRAS = ["card", "brand", "outro", "music", "credit_style"];
+  function saveExtras(d) {
+    D.extras = {};
+    for (const k of EXTRAS) D.extras[k] = clone(d[k]);
+    try { localStorage.setItem("clipstudio.extras", JSON.stringify(D.extras)); } catch { /* private mode */ }
+  }
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const kindOf = (t) => t.kind || (t.design && t.design.aspect === "16:9" ? "long" : "short");
   const kinds = () => (D.kind === "both" ? ["short", "long"] : [D.kind]);
@@ -35,6 +43,8 @@
     const base = clone(D.defaults);
     const td = clone(t.design || {});
     const d = { ...base, ...td, caption: { ...base.caption, ...(td.caption || {}) }, title: { ...base.title, ...(td.title || {}) } };
+    for (const k of ["card", "brand", "outro", "music"]) d[k] = { ...clone(base[k] || {}), ...(td[k] || {}) };
+    if (!t.mine && D.extras) for (const k of EXTRAS) if (D.extras[k] !== undefined) d[k] = clone(D.extras[k]);
     d.template = t.id;
     d.aspect = KINDS[kind].aspect;
     d.cam_roi = null; d.game_roi = null; d.credit = "";
@@ -45,6 +55,7 @@
     const d = designFrom(t, kind);
     if (keepCaptions && old) d.caption = { ...d.caption };
     D.formats[kind] = { template: t.id, design: d, dirty: false };
+    if (t.mine) saveExtras(d);
     if (D.stages[kind]) D.stages[kind].setDesign(d);
     if (D.onPick && D.kind !== "both") D.onPick(t);
   }
@@ -367,6 +378,25 @@
     $("#capUpper").checked = !!c.uppercase;
     $("#capEmoji").checked = !!c.emoji;
     $("#capFor").textContent = D.kind === "both" ? "Applies to both videos" : "";
+    if (window.ClipOverlays) window.ClipOverlays.sync();
+  }
+  /* Cards / My brand / Outro & music tabs (overlays.js) change every video type at once, like captions. */
+  function overlaySet(fn, quiet) {
+    for (const kind of kinds()) {
+      fn(D.formats[kind].design, kind);
+      D.formats[kind].dirty = true;
+      D.stages[kind] && D.stages[kind].paint();
+      paintToolbar(kind);
+    }
+    saveExtras(design());
+    if (!quiet && window.ClipOverlays) window.ClipOverlays.sync();
+  }
+  function setupTabs() {
+    $$("[data-dtab]").forEach((tab) => tab.addEventListener("click", () => {
+      $$("[data-dtab]").forEach((t) => t.classList.toggle("active", t === tab));
+      $$(".dtab").forEach((panel) => { panel.hidden = panel.id !== "dtab-" + tab.dataset.dtab; });
+      if (window.ClipOverlays) window.ClipOverlays.show(tab.dataset.dtab);
+    }));
   }
   function swatches(id, key) {
     const box = $(id);
@@ -502,8 +532,15 @@
     window.ClipStage.setEmoji(data.emoji);
     D.words = window.ClipStage.sampleWords();
     D.loop = D.words[D.words.length - 1].end + 1.2;
+    try { D.extras = JSON.parse(localStorage.getItem("clipstudio.extras") || "null"); } catch { D.extras = null; }
+    if (D.extras) {
+      // drop anything the engine no longer accepts (keys only; values are checked when clips are made)
+      for (const k of Object.keys(D.extras)) if (!EXTRAS.includes(k)) delete D.extras[k];
+    }
     for (const kind of Object.keys(KINDS)) pick(kind, tpl(KINDS[kind].first) || D.templates.find((t) => kindOf(t) === kind));
     setupCaptions();
+    setupTabs();
+    if (window.ClipOverlays) window.ClipOverlays.init();
     let saved = "short";
     try { saved = localStorage.getItem("clipstudio.kind") || "short"; } catch { /* private mode */ }
     setKind(saved, true);
@@ -534,5 +571,9 @@
   }
 
   function ensureCaptions() { if (!captionsOn()) capSet({ style: "pop" }); }
-  window.ClipDesigner = { init, enter, ensureCaptions, setKind, payload, summary, captionsOn, get kind() { return D.kind; }, set onPick(fn) { D.onPick = fn; } };
+  window.ClipDesigner = {
+    init, enter, ensureCaptions, setKind, payload, summary, captionsOn,
+    current: () => design(), update: overlaySet, fonts: () => D.fonts, credit: () => D.credit,
+    get kind() { return D.kind; }, set onPick(fn) { D.onPick = fn; },
+  };
 })();
