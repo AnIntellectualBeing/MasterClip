@@ -101,6 +101,44 @@ def _quote(text: str) -> tuple[str | None, int]:
     return (f'"{best}"' if best else None), best_score
 
 
+_QUESTIONS = [
+    (("police", "cop", "cops", "wanted", "chase", "chasing", "arrest", "sirens"), ["Can {s} lose the cops?", "Will {s} get away this time?"]),
+    (("rizz", "date", "kiss", "girlfriend", "boyfriend"), ["Does {p} rizz actually work?"]),
+    (("heist", "bank", "rob", "robbery", "steal"), ["Will this {g} heist work?"]),
+    (("crash", "crashed", "driving", "plane", "fly", "flying", "bike"), ["Who let {s} drive?"]),
+    (("shot", "shoot", "shooting", "gun", "fight"), ["Who wins this {g} fight?"]),
+    (("haha", "lol", "lmao", "laugh", "laughing"), ["Why can't {s} stop laughing?"]),
+    (("rap", "song", "sing", "singing", "beat"), ["Can {s} actually sing?"]),
+]
+
+
+def question_titles(text: str, streamer: str = "", context: str = "", current: str = "", count: int = 3) -> list[str]:
+    """"Improve heading" without AI: hook questions built only from what was said in the clip.
+    A question doesn't claim an outcome, so it stays honest (see the rule at the top)."""
+    name = (streamer or "").strip().lstrip("@") or "he"
+    game = detect_game(context)
+    fill = {"s": name, "p": _possessive(name) if name != "he" else "his", "g": game or "this"}
+    lower = (text or "").lower()
+    out = []
+    quote, strength = _quote(text or "")
+    if quote and strength >= 2:
+        words = quote.strip('"').split()
+        short = " ".join(words[:6]).rstrip(".,!?")
+        out.append(f'What made {fill["s"]} say "{short}"?')
+    for keys, lines in _QUESTIONS:
+        if any(re.search(rf"\b{re.escape(k)}\b", lower) for k in keys):
+            out.extend(line.format(**fill) for line in lines)
+    out += ["Wait for it... what happens next?", f"Would you have done this in {game}?" if game else "Would you have done this?",
+            "Did that really just happen?"]
+    seen, unique = {(current or "").strip().lower()}, []
+    for line in out:
+        line = line[0].upper() + line[1:]
+        if line.lower() not in seen:
+            seen.add(line.lower())
+            unique.append(line[:90])
+    return unique[:count]
+
+
 def suggest_titles(text: str, streamer: str = "", count: int = 3, avoid=(), reasons=(), context: str = "") -> list[str]:
     """Best titles first. Titles in `avoid` (already used for another clip of this video) go last,
     so every clip gets its own title. `reasons` are the picker's reasons for this clip; only those

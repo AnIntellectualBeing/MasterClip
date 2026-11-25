@@ -23,6 +23,7 @@ class Candidate:
     # The event itself inside [start, end]; clips are shaped around it (setup before, reaction after).
     core_start: float | None = None
     core_end: float | None = None
+    parts: dict | None = None  # signal strengths of the core (see rank_moments)
 
     def __post_init__(self):
         if self.reasons is None:
@@ -168,17 +169,20 @@ def _motion_scores(path, window_count, window_seconds, cancel_event=None):
             proc.stdout.close()
 
 
-def rank_moments(duration, transcript, rms, peak, motion2=None, heat=None, context_seconds=28, chat=None):
+def rank_moments(duration, transcript, rms, peak, motion2=None, heat=None, context_seconds=28, chat=None, weights=None):
     """Rule-based moment picker (clipstudio.moments): GTA events said out loud, back-and-forth,
     loudness jumps, scene change and "most replayed". Each candidate spans setup + event + reaction,
     cut between sentences; core_start/core_end mark the event so a short can be re-shaped to any length."""
     from .moments import find_moments, shape_clip
 
-    moments, tl = find_moments(duration, transcript, rms, peak, motion2, heat, chat)
+    moments, tl = find_moments(duration, transcript, rms, peak, motion2, heat, chat, weights=weights)
     out = []
     for m in moments:
         start, end = shape_clip(m.core_start, m.core_end, tl.sents, duration, context_seconds)
-        out.append(Candidate(start, end, m.score, list(m.reasons), m.core_start, m.core_end))
+        a, b = int(m.core_start), max(int(m.core_start) + 1, int(math.ceil(m.core_end)))
+        # What made this moment stand out (0..1 per signal): the star ratings learn from it.
+        parts = {k: round(float(v[a:b].max(initial=0)), 3) for k, v in tl.parts.items()}
+        out.append(Candidate(start, end, m.score, list(m.reasons), m.core_start, m.core_end, parts))
     return out
 
 
@@ -192,6 +196,7 @@ def analyze_media(
     progress=None,
     heat=None,
     chat=None,
+    weights=None,
 ):
     info = probe_media(path)
     warnings = []
@@ -242,6 +247,7 @@ def analyze_media(
             heat,
             context_seconds,
             chat,
+            weights,
         )
         return AnalysisResult(info.duration, candidates, warnings)
     finally:

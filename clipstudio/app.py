@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 from . import storage
 from . import campaigns as camp
 from .jobs import JobStore, ACTIVE
-from .mytemplates import MyTemplates
+from .mytemplates import MyCaptionStyles, MyTemplates
 from .searches import Searches
 from .sources import import_url, validate_url
 from .media import extract_audio, probe_media
@@ -55,6 +55,7 @@ events: dict[str, threading.Event] = {}
 busy = threading.Lock()
 searches = Searches()
 my_templates = MyTemplates(store.root)
+my_caption_styles = MyCaptionStyles(store.root)
 
 
 @asynccontextmanager
@@ -136,6 +137,8 @@ class ClipEdit(BaseModel):
     end: float = Field(gt=0, allow_inf_nan=False)
     title: str = Field(default="", max_length=140)
     design: dict
+    # Put this clip's look (not its trim or title) on every other clip of the same shape too.
+    apply_all: bool = False
 
 
 class ProjectRequest(SourceRequest):
@@ -193,6 +196,8 @@ class Recipe(BaseModel):
     resolution: Literal[720, 1080, 2160] = 1080
     # Set when the clips are made for a campaign (Campaigns > Clip for this).
     campaign_id: str | None = Field(default=None, max_length=80)
+    # Moment mix: which moments the picker prefers (taste.py).
+    mix: Literal["balanced", "action", "dialogue"] = "balanced"
 
 
 def validate_auto_post(recipe):
@@ -476,6 +481,7 @@ def analyze(ident, options, imported_transcript=None):
             progress=lambda p, m: progress(ident, "analyzing", 0.76 + 0.23 * p, m),
             heat=heat,
             chat=chat,
+            weights=job_weights(store.get(ident)),
         )
         if os.environ.get("CLIPSTUDIO_DIRECTOR_MODEL") and transcript:
             progress(
@@ -537,6 +543,16 @@ def analyze(ident, options, imported_transcript=None):
             message="Cancelled" if event.is_set() else "Processing failed",
             error=str(exc)[:1000],
         )
+
+
+def job_weights(job):
+    """Moment-picking weights: the Moment mix chip + what the star ratings taught (None = standard)."""
+    from .taste import moment_weights
+
+    try:
+        return moment_weights(store.root, (job.get("recipe") or {}).get("mix"))
+    except Exception:  # noqa: BLE001 - a broken feedback file never stops a job
+        return None
 
 
 def file_output(ident, path, kind):
@@ -676,6 +692,7 @@ def export_clips(ident, options):
                     file=name, url=f"/api/jobs/{ident}/files/{name}", title=title,
                     suggestions=suggestions, text=text[:600],
                     design=design.model_dump(), template=template,
+                    reasons=list(c.reasons or []), parts=getattr(c, "parts", None),
                 ))
                 store.update(ident, clips=clips, outputs=[
                     file_output(ident, folder / x["file"], "clip") for x in clips
@@ -719,20 +736,61 @@ def rerender_clip(ident, index, edit: ClipEdit):
             design=design.model_dump(), file=name, version=version, text=text[:600],
             url=f"/api/jobs/{ident}/files/{name}",
         )
-        store.update(
-            ident, status="complete", progress=1, clips=clips,
-            outputs=[file_output(ident, folder / x["file"], "clip") for x in clips],
-            message=f"Clip {index + 1} updated",
-        )
+        store.update(ident, clips=clips, outputs=[file_output(ident, folder / x["file"], "clip") for x in clips])
         try:
             old.unlink(missing_ok=True)
         except OSError:
             pass
+        others = [n for n, c in enumerate(clips) if n != index and same_shape(c, clips[index])] if edit.apply_all else []
+        for done, n in enumerate(others, 1):
+            if event.is_set():
+                raise RuntimeError("Cancelled")
+            progress(ident, "rendering", 0.3 + 0.7 * done / (len(others) + 1),
+                     f"Putting the look on clip {n + 1} ({done} of {len(others)})")
+            restyle_one(ident, job, transcript, clips, n, look_for(design, clips[n]), event)
+        store.update(
+            ident, status="complete", progress=1, clips=clips,
+            outputs=[file_output(ident, folder / x["file"], "clip") for x in clips],
+            message=f"Clip {index + 1} updated" + (f" and its look put on {len(others)} more" if others else ""),
+        )
     except Exception as exc:
         store.update(
             ident, status="cancelled" if event.is_set() else "complete",
             error=str(exc)[:1000], message="That change didn't work. Try again.",
         )
+
+
+def same_shape(a, b) -> bool:
+    return (a.get("kind") or "short") == (b.get("kind") or "short")
+
+
+def look_for(design, clip):
+    """`design` (one clip's look) for another clip: that clip keeps its own title words."""
+    from .design import Design
+
+    data = design.model_dump()
+    data["title"]["text"] = (clip.get("design") or {}).get("title", {}).get("text", "")
+    return Design(**data)
+
+
+def restyle_one(ident, job, transcript, clips, n, design, event):
+    """Render clip n again with `design`, same moment and title (updates `clips` in place)."""
+    from .render import render_clip
+
+    folder = store.folder(ident)
+    clip = clips[n]
+    segments, _ = _clip_words(transcript, clip["start"], clip["end"])
+    version = int(clip.get("version", 0)) + 1
+    name = f"clip-{job.get('export_revision', 1):02}-{n + 1:02}-v{version}.mp4"
+    render_clip(job["source_path"], clip["start"], clip["end"], folder / name, design,
+                segments, clip.get("title") or "", cancel_event=event)
+    old = folder / clip["file"]
+    clip.update(file=name, version=version, url=f"/api/jobs/{ident}/files/{name}", design=design.model_dump())
+    store.update(ident, clips=clips, outputs=[file_output(ident, folder / x["file"], "clip") for x in clips])
+    try:
+        old.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def export(ident, options):
@@ -1331,7 +1389,14 @@ def list_templates():
     from .design import FONTS, TEMPLATES, Design
     from .emoji import emoji_table
 
+    from .fonts import installed_fonts
+
+    try:
+        pc_fonts = list(installed_fonts())
+    except Exception:  # noqa: BLE001
+        pc_fonts = []
     return dict(templates=[*TEMPLATES, *my_templates.all()], fonts=list(FONTS), font_files=FONTS,
+                pc_fonts=pc_fonts, caption_styles=my_caption_styles.all(),
                 defaults=Design().model_dump(), emoji=emoji_table())
 
 
@@ -1572,17 +1637,18 @@ def save_captions(ident, options: CaptionsRequest):
                 raise ValueError("Caption times must stay inside the original video.")
         except ValueError as exc:
             raise HTTPException(400, str(exc))
+        from .captionedit import clean_edited
+
         path = store.folder(ident) / "transcript.json"
         previous = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
         lookup = {(c["start"], c["end"], c["text"]): c for c in previous}
         final = []
         for cue in cues:
             old = lookup.get((cue["start"], cue["end"], cue["text"]))
-            if old and old.get("words"):
+            if old and old.get("words") and not cue.get("words"):
                 cue["words"] = old["words"]
-            else:
-                cue.pop("words", None)
-            final.append(cue)
+            # Edited in the caption editor: word timing kept when the words still match.
+            final.append(clean_edited(cue))
         final.sort(key=lambda c: c["start"])
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(final, ensure_ascii=False), encoding="utf-8")
@@ -1690,6 +1756,270 @@ def output_file(ident, name):
     if not path.is_file():
         raise HTTPException(404, "Output file is missing")
     return FileResponse(path, filename=name)
+
+
+# ---------------- editing: caption files, title ideas, ratings, extra clips ----------------
+from fastapi.responses import Response  # noqa: E402
+
+
+def _transcript(ident) -> list:
+    path = store.folder(ident) / "transcript.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
+
+
+def _write_transcript(ident, segments) -> None:
+    path = store.folder(ident) / "transcript.json"
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(segments, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
+
+
+@app.get("/api/jobs/{ident}/captions/export")
+def export_caption_file(ident, format: Literal["srt", "vtt"] = "srt", start: float = 0, end: float | None = None,
+                        name: str = "captions"):
+    from .captionedit import export_captions
+
+    job = get_job(ident)
+    end = float(end if end is not None else job.get("duration") or 0)
+    if end <= start:
+        raise HTTPException(400, "Pick a part of the video first.")
+    text = export_captions(_transcript(ident), float(start), end, format)
+    safe = _safe_name(name) or "captions"
+    media = "text/vtt" if format == "vtt" else "application/x-subrip"
+    return Response(text.encode("utf-8"), media_type=f"{media}; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{safe}.{format}"'})
+
+
+@app.post("/api/jobs/{ident}/captions/import")
+def import_caption_file(ident, file: UploadFile = File(...), for_clip: bool = Form(True),
+                        start: float = Form(0), end: float = Form(0)):
+    """Put an SRT / VTT / ASS file into the captions (no new moment search)."""
+    from .captionedit import import_captions, parse_caption_file
+
+    with busy:
+        job = get_job(ident)
+        if job["status"] in ACTIVE:
+            raise HTTPException(409, "Wait for the current step to finish.")
+        duration = float(job.get("duration") or 0)
+        try:
+            raw = file.file.read(5 * 1024 * 1024 + 1)
+            if len(raw) > 5 * 1024 * 1024:
+                raise ValueError("Caption files can be up to 5 MB.")
+            cues = parse_caption_file(raw.decode("utf-8-sig"), file.filename or "")
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise HTTPException(400, f"That caption file couldn't be read: {exc}")
+        finally:
+            file.file.close()
+        if not cues:
+            raise HTTPException(400, "That file has no captions in it.")
+        if for_clip:
+            if end <= start:
+                raise HTTPException(400, "Pick the clip first.")
+            if cues[0]["start"] > end - start:
+                raise HTTPException(400, "The times in this file are after the end of this clip. "
+                                         "Pick \"the whole video\" if the file was made for the full video.")
+        elif duration and cues[0]["start"] > duration:
+            raise HTTPException(400, "The times in this file are after the end of this video.")
+        segments = import_captions(_transcript(ident), cues, float(start), float(end) or duration, for_clip)
+        _write_transcript(ident, segments)
+        store.update(ident, caption_revision=job.get("caption_revision", 0) + 1)
+        return dict(segments=segments, imported=len(cues))
+
+
+class RatingRequest(BaseModel):
+    stars: int = Field(ge=1, le=5)
+
+
+@app.post("/api/jobs/{ident}/clips/{index}/rating")
+def rate_clip(ident, index: int, body: RatingRequest):
+    from .taste import learned, record
+
+    with busy:
+        job = get_job(ident)
+        clips = job.get("clips") or []
+        if not 0 <= index < len(clips):
+            raise HTTPException(404, "Clip not found")
+        clips[index]["rating"] = body.stars
+        record(store.root, ident, clips[index], body.stars)
+        store.update(ident, clips=clips)
+    return dict(rating=body.stars, taste=learned(store.root))
+
+
+@app.get("/api/taste")
+def taste_status():
+    from .taste import learned
+
+    return learned(store.root)
+
+
+@app.post("/api/jobs/{ident}/clips/{index}/title-ideas")
+def title_ideas(ident, index: int):
+    """"Improve heading": a hook question from what was said (AI boost if it's on, else rules)."""
+    from .titles import question_titles
+
+    job = get_job(ident)
+    clips = job.get("clips") or []
+    if not 0 <= index < len(clips):
+        raise HTTPException(404, "Clip not found")
+    clip = clips[index]
+    _, text = _clip_words(_transcript(ident), clip["start"], clip["end"])
+    ideas = question_titles(text, job.get("channel") or "", _title_context(job), clip.get("title") or "")
+    note = "Ideas from what's said in this clip."
+    from .boost import Booster, BoostError
+
+    booster = Booster(store.root)
+    if booster.on and len(text.split()) >= 4:
+        try:
+            hint = (_title_context(job) + ". Write the title as a short hook question a viewer would ask, "
+                    "using only what the words show.").strip(". ")
+            picks = booster.rate([dict(id="h", start=0, end=clip["end"] - clip["start"], score=0.5, text=text)],
+                                 job.get("channel") or "", hint)
+            if "h" in picks and picks["h"].title:
+                ideas = [picks["h"].title] + [t for t in ideas if t != picks["h"].title][:2]
+                note = "✨ The first idea is from your AI boost."
+        except BoostError as error:
+            note = f"AI boost didn't answer ({error}), so these come from the clip's words."
+    return dict(titles=ideas, note=note)
+
+
+class NewClip(BaseModel):
+    start: float = Field(ge=0, allow_inf_nan=False)
+    end: float = Field(gt=0, allow_inf_nan=False)
+    title: str = Field(default="", max_length=140)
+
+
+class AddClipsRequest(BaseModel):
+    clips: list[NewClip] = Field(min_length=1, max_length=30)
+
+
+def add_clips(ident, wanted: list[dict]):
+    """New clips of parts the buyer picked (transcript explorer / chatbot helper), added to the list."""
+    from .design import Design
+    from .render import render_clip
+    from .titles import suggest_titles
+
+    event = events[ident]
+    folder = store.folder(ident)
+    job = store.get(ident)
+    try:
+        transcript = _transcript(ident)
+        clips = list(job.get("clips") or [])
+        captions = (job.get("options") or {}).get("transcribe", True)
+        designs = []
+        for kind, template, design in job_designs(job, captions):
+            mine = next((c for c in reversed(clips) if (c.get("kind") or "short") == kind and c.get("design")), None)
+            if mine:  # the look the buyer already gave this video's clips
+                design, template = look_for(Design(**mine["design"]), {}), mine.get("template") or template
+            designs.append((kind, template, design))
+        moment = 1 + max((c.get("moment", c["index"]) for c in clips), default=-1)
+        total = len(wanted) * len(designs)
+        for i, part in enumerate(wanted):
+            segments, text = _clip_words(transcript, part["start"], part["end"])
+            used = {c.get("title") for c in clips}
+            suggestions = suggest_titles(text, job.get("channel", ""), avoid=used, context=_title_context(job))
+            title = part.get("title") or (suggestions[0] if suggestions else "")
+            for d, (kind, template, design) in enumerate(designs):
+                if event.is_set():
+                    raise RuntimeError("Cancelled")
+                n = len(clips)
+                progress(ident, "rendering", 0.02 + 0.96 * (i * len(designs) + d) / max(1, total),
+                         f"Making your clip {i + 1} of {len(wanted)}")
+                name = f"pick-{n + 1:02}-{kind}-{os.urandom(3).hex()}.mp4"
+                render_clip(job["source_path"], part["start"], part["end"], folder / name, design,
+                            segments, title, cancel_event=event)
+                clips.append(dict(
+                    index=n, moment=moment + i, kind=kind, start=round(part["start"], 2), end=round(part["end"], 2),
+                    score=0, file=name, url=f"/api/jobs/{ident}/files/{name}", title=title,
+                    suggestions=[title] + [t for t in suggestions if t != title][:2], text=text[:600],
+                    design=design.model_dump(), template=template, reasons=["You picked this part"],
+                ))
+                store.update(ident, clips=clips, outputs=[file_output(ident, folder / x["file"], "clip") for x in clips])
+        store.update(ident, status="complete", progress=1, clips=clips,
+                     message=f"{len(wanted)} new clip{'s' if len(wanted) != 1 else ''} added")
+    except Exception as exc:
+        store.update(ident, status="cancelled" if event.is_set() else "complete", error=str(exc)[:1000],
+                     message="Making that clip stopped. The clips that were done are kept.")
+
+
+@app.post("/api/jobs/{ident}/add-clips", status_code=202)
+def add_clips_route(ident, body: AddClipsRequest):
+    with busy:
+        job = get_job(ident)
+        if job["status"] in ACTIVE:
+            raise HTTPException(409, "Wait for the current step to finish.")
+        duration = float(job.get("duration") or 0)
+        if not job.get("source_path") or not Path(job["source_path"]).is_file():
+            raise HTTPException(400, "The source video of these clips is gone, so new clips can't be cut.")
+        wanted = []
+        for c in body.clips:
+            end = min(c.end, duration) if duration else c.end
+            if end - c.start < 3:
+                raise HTTPException(400, "Each clip must be at least 3 seconds long.")
+            if end - c.start > 180:
+                raise HTTPException(400, "Keep each clip under 3 minutes.")
+            wanted.append(dict(start=c.start, end=end, title=c.title.strip()))
+        events[ident] = threading.Event()
+        store.update(ident, status="rendering", progress=0.02, error=None, message="Making your clip")
+        pool.submit(add_clips, ident, wanted)
+        return store.get(ident)
+
+
+@app.get("/api/jobs/{ident}/chat-helper")
+def chat_helper(ident, minutes: int = 25):
+    from .chathelp import part_prompt, split_parts
+
+    job = get_job(ident)
+    transcript = _transcript(ident)
+    if not transcript:
+        raise HTTPException(400, "This video has no captions yet, so there's nothing to give a chatbot.")
+    minutes = max(5, min(60, int(minutes)))
+    parts = split_parts(transcript, minutes * 60, job.get("duration"))
+    length = int((job.get("recipe") or {}).get("length") or 30)
+    context = " ".join(str(job.get(k) or "") for k in ("title", "channel")).strip()
+    return dict(parts=[dict(start=p["start"], end=p["end"],
+                            prompt=part_prompt(p, i + 1, len(parts), length, context)) for i, p in enumerate(parts)])
+
+
+class AnswerRequest(BaseModel):
+    text: str = Field(max_length=200_000)
+
+
+@app.post("/api/jobs/{ident}/chat-helper/parse")
+def chat_helper_parse(ident, body: AnswerRequest):
+    from .chathelp import parse_answer
+
+    job = get_job(ident)
+    moments = parse_answer(body.text, job.get("duration"))
+    if not moments:
+        raise HTTPException(400, "No moments found. Each one needs a time range like 12:30-13:10 and a title.")
+    return dict(moments=moments)
+
+
+class CaptionStyleRequest(BaseModel):
+    name: str = Field(default="", max_length=60)
+    caption: dict
+
+
+@app.get("/api/caption-styles")
+def list_caption_styles():
+    return dict(styles=my_caption_styles.all())
+
+
+@app.post("/api/caption-styles", status_code=201)
+def add_caption_style(body: CaptionStyleRequest):
+    try:
+        return my_caption_styles.add(body.name, body.caption)
+    except ValueError as exc:
+        raise HTTPException(400, _friendly(exc))
+
+
+@app.delete("/api/caption-styles/{ident}")
+def delete_caption_style(ident: str):
+    try:
+        my_caption_styles.delete(ident)
+    except KeyError:
+        raise HTTPException(404, "That caption style is gone.")
+    return dict(ok=True)
 
 
 # ---------------- posting (buyer's own Zernio account) ----------------
@@ -2236,7 +2566,8 @@ def _live_window(ident, source, start, end, number, transcript, found, clips, re
     transcript.extend(shift(local, start))
     (folder / "transcript.json").write_text(json.dumps(transcript, ensure_ascii=False), encoding="utf-8")
     result = analyze_media(chunk, transcript_segments=local, audio_path=audio if info.has_audio else None,
-                           cancel_event=event, context_seconds=28, chat=chat or None)
+                           cancel_event=event, context_seconds=28, chat=chat or None,
+                           weights=job_weights(store.get(ident)))
     moments = [
         _replace(c, start=c.start + start, end=min(c.end + start, end),
                  core_start=None if c.core_start is None else c.core_start + start,
@@ -2282,6 +2613,7 @@ def _live_window(ident, source, start, end, number, transcript, found, clips, re
                 index=len(clips), moment=moments_before + i, kind=kind, start=round(c.start, 2), end=round(c.end, 2),
                 score=c.score, file=name, url=f"/api/jobs/{ident}/files/{name}", title=title, suggestions=suggestions,
                 text=text[:600], design=design.model_dump(), template=template, window=number,
+                reasons=list(c.reasons or []), parts=getattr(c, "parts", None),
             ))
             saved_to = _autosave_live(ident, job, folder / name, clips[-1], len(designs) > 1)
             auto_post_clip(ident, job, clips[-1])
