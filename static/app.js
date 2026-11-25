@@ -27,6 +27,18 @@ $("#newWindow").addEventListener("click", async () => {
 function continuousSource() {
   return state.source && state.source.kind === "url" && state.source.info.is_live && !state.source.liveMinutes;
 }
+/* 4K is offered only when the link really has it (the site lists its sizes when we open it). */
+function paintQuality(info) {
+  const select = $("#exportQuality");
+  const k4 = select && select.querySelector('option[value="2160"]');
+  if (!k4) return;
+  const h = info && info.max_height;
+  if (!h) { k4.disabled = false; k4.textContent = "4K · 2160p · best available source"; return; }
+  if (h >= 2160) { k4.disabled = false; k4.textContent = "4K · 2160p · this video has 4K"; return; }
+  k4.disabled = true;
+  k4.textContent = `4K · not available (this video goes up to ${h}p)`;
+  if (select.value === "2160") select.value = "1080";
+}
 function paintContinuousChoice() {
   $("#clipCountSetting").hidden = !!continuousSource();
   $("#continuousNote").hidden = !continuousSource();
@@ -246,6 +258,7 @@ async function pickUrl(url, preview) {
   try {
     const info = await api("/api/inspect", { method: "POST", body: { url } });
     state.source = { kind: "url", url: info.url, info, liveMinutes: 0 };
+    paintQuality(info);
     setTimeout(() => setPostMode(state.autoPost ? "auto" : "manual"), 0);
     forgetFinishedJob();
     const badge = info.is_live ? "LIVE" : info.duration ? `PAST STREAM · ${clock(info.duration)}` : "VIDEO";
@@ -369,6 +382,7 @@ function pickFile(file) {
   if (!file) return;
   if (!/\.(mp4|mkv|mov|webm|avi|m4v|ts)$/i.test(file.name)) { notice("That file isn't a video we can open. Use MP4, MKV, MOV or WEBM."); return; }
   state.source = { kind: "file", file };
+  paintQuality(null);
   forgetFinishedJob();
   $("#fileLabel").textContent = file.name;
   $("#rangeBox").hidden = true;
@@ -791,7 +805,7 @@ function showLive(job) {
     $("#hypeFill").className = hype >= 85 ? "peak" : hype >= 55 ? "hot" : "";
     $("#hypeText").textContent = live.chat === "reading"
       ? `Chat: ${live.hype_label || "quiet"} (${live.chat_per_min || 0}/min)`
-      : live.chat === "connecting" ? "Connecting to chat…" : "Chat reconnecting…";
+      : live.chat === "connecting" ? "Connecting to chat…" : live.chat === "no chat" ? "Chat is off on this stream" : "Chat reconnecting…";
   }
   $("#liveClip").hidden = stopping || live.state === "starting";
   $("#liveClip").disabled = !!live.clip_now || live.state === "clipping";
@@ -864,6 +878,8 @@ function paintCards(job) {
       el("div", { class: "clip-actions" },
         el("button", { class: "ghost small", type: "button", text: "✏️ Edit", disabled: live, title: live ? "You can edit after you press Stop" : "", onclick: () => window.ClipEditor.open(job, clip.index) }),
         el("button", { class: "ghost small manual-post", type: "button", text: "📤 Post", onclick: () => window.ClipPosting.schedule(job.id, [clip.index]) }),
+        el("button", { class: "ghost small", type: "button", text: "🖼 Cover", title: "A picture with the title for this clip. Also used as the thumbnail when you post it.",
+          onclick: () => window.ClipAuto && window.ClipAuto.cover(job.id, clip.index, clip.title) }),
         el("a", { class: "primary small", href: clip.url, download: `${clip.index + 1} ${clip.title || "clip"}.mp4`, text: "Download" }))));
     return card;
   }));

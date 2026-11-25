@@ -1,0 +1,86 @@
+{
+ "continuationContents": {
+  "liveChatContinuation": {
+   "continuations": [
+    {
+     "invalidationContinuationData": {
+      "timeoutMs": 10000,
+      "continuation": "SAMPLE_NEXT"
+     }
+    }
+   ],
+   "actions": [
+    {
+     "addChatItemAction": {
+      "item": {
+       "liveChatTextMessageRenderer": {
+        "message": {
+         "runs": [
+          {
+           "text": "Tammy that’s lowky stuff as Shi I ain’t gonna lie "
+          }
+         ]
+        },
+        "authorName": {
+         "simpleText": "@viewer"
+        },
+        "timestampUsec": "1795572251345613"
+       }
+      }
+     }
+    },
+    {
+     "addChatItemAction": {
+      "item": {
+       "liveChatTextMessageRenderer": {
+        "message": {
+         "runs": [
+          {
+           "text": "aww, that disgusting, i"
+          }
+         ]
+        },
+        "authorName": {
+         "simpleText": "@viewer"
+        },
+        "timestampUsec": "1795572254259408"
+       }
+      }
+     }
+    },
+    {
+     "addChatItemAction": {
+      "item": {
+       "liveChatTextMessageRenderer": {
+        "message": {
+         "runs": [
+          {
+           "emoji": {
+            "emojiId": "UCx",
+            "shortcuts": [
+             ":face-with-tears-of-joy:"
+            ]
+           }
+          },
+          {
+           "text": " LMAO"
+          }
+         ]
+        },
+        "authorName": {
+         "simpleText": "@viewer"
+        },
+        "timestampUsec": "1795572254259408"
+       }
+      }
+     }
+    },
+    {
+     "addLiveChatTickerItemAction": {
+      "item": {}
+     }
+    }
+   ]
+  }
+ }
+}

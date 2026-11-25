@@ -171,7 +171,7 @@ def run_capture(module, monkeypatch, tmp_path, *, spikes=(), clip_now_at=None, s
             module.live_clip_now.add(ident)
 
     monkeypatch.setattr(module, "_live_recorder", lambda *a: (recorder, "Title", "Streamer"))
-    monkeypatch.setattr(module, "_live_chat", lambda url, start: FakeChat(clock, spikes))
+    monkeypatch.setattr(module, "_live_chat", lambda url, start, video_id=None: FakeChat(clock, spikes))
     monkeypatch.setattr(module, "_live_window", fake_window)
     monkeypatch.setattr(module.time, "sleep", tick)
     monkeypatch.setattr("clipstudio.live.finish_recording", lambda p: p)

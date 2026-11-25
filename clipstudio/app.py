@@ -65,7 +65,11 @@ _overlays.set_asset_dir(store.root / "brand")
 async def lifespan(app):
     poster.recover()
     poster.kick()
+    from . import automation_api
+
+    automation_api.on_start()  # Creators watch resumes only if the buyer added creators
     yield
+    automation_api.on_stop()  # phone remote off, watcher stopped
     for event in events.values():
         event.set()
     for event in searches.events.values():
@@ -233,6 +237,9 @@ def auto_post_clip(ident, job, clip):
             item["caption"] = clip["caption"]
         if clip.get("kind") == "long":
             item["only"] = ["youtube"]
+        cover = clip_cover(ident, clip, make=True)
+        if cover:
+            item["cover"] = cover
         added = poster.add([item], "slots")
         clip["posting_ids"] = [i["id"] for i in added]
     except Exception as exc:  # no key / no account: tell the buyer once, keep clipping
@@ -240,6 +247,31 @@ def auto_post_clip(ident, job, clip):
         note = f"Auto-post is on but this clip wasn't queued: {str(exc)[:160]}"
         if note not in warnings:
             store.update(ident, warnings=warnings + [note])
+
+
+def clip_cover(ident, clip, make=True) -> Path | None:
+    """The clip's cover JPG (next to the clip). make=True creates it when missing or older than
+    the clip. Never raises: a missing cover only means the platform picks a frame."""
+    from .cover import cover_path, make_cover
+
+    try:
+        video = store.folder(ident) / clip["file"]
+        target = cover_path(video)
+        if target.is_file() and target.stat().st_mtime >= video.stat().st_mtime:
+            return target
+        if not make or not video.is_file():
+            return None
+        job = store.get(ident)
+        clean = None
+        source = job.get("source_path")
+        if source and Path(source).is_file() and clip.get("design"):
+            clean = (source, float(clip.get("start") or 0), clip["design"])
+        return make_cover(video, clip.get("title") or "", target, clean=clean)
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("clipstudio").warning("cover for %s/%s not made: %s", ident, clip.get("index"), exc)
+        return None
 
 
 def recipe_formats(recipe: dict | None) -> list[dict]:
@@ -1201,21 +1233,9 @@ def create_project(options: ProjectRequest):
     if options.live_rolling:
         if options.source_type != "url":
             raise HTTPException(400, "Keep clipping only works with a live stream link.")
-        try:
-            validate_url(options.source)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc))
-        job = store.create(
-            "Live stream", source_path=None, options=source_options.model_dump(exclude={"source"}),
-            topic=options.topic, recipe=recipe or Recipe().model_dump(), product_format=options.format,
-            live=dict(state="starting", recorded=0, windows=0, window=live_window_seconds()),
-        )
-        events[job["id"]] = threading.Event()
-        live_stops[job["id"]] = threading.Event()
-        threading.Thread(target=run_live, args=(job["id"], source_options, options.captions),
-                         name="clip-live", daemon=True).start()
+        job = start_live_job(source_options, recipe, options.captions, options.format, options.topic)
         licence_count()
-        return store.get(job["id"])
+        return job
     job = enqueue_source(
         source_options,
         dict(
@@ -1228,6 +1248,25 @@ def create_project(options: ProjectRequest):
     )
     licence_count()
     return job
+
+
+def start_live_job(source_options, recipe, captions=True, fmt="vertical", topic="", extra=None):
+    """Start non-stop live clipping of a stream link (home screen, Creators and the phone remote)."""
+    try:
+        validate_url(source_options.source)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    job = store.create(
+        "Live stream", source_path=None, options=source_options.model_dump(exclude={"source"}),
+        topic=topic, recipe=recipe or Recipe().model_dump(), product_format=fmt,
+        live=dict(state="starting", recorded=0, windows=0, window=live_window_seconds()),
+        **(extra or {}),
+    )
+    events[job["id"]] = threading.Event()
+    live_stops[job["id"]] = threading.Event()
+    threading.Thread(target=run_live, args=(job["id"], source_options, captions),
+                     name="clip-live", daemon=True).start()
+    return store.get(job["id"])
 
 
 def output_folder() -> Path:
@@ -2279,6 +2318,9 @@ def post_add(body: QueueRequest):
                     "posting_slot": (job.get("recipe") or {}).get("posting_slot", 0)}
             if item["kind"] == "long":
                 item["only"] = ["youtube"]
+            cover = clip_cover(body.job_id, clip, make=False)  # made with the clip's Cover button
+            if cover:
+                item["cover"] = cover
             items.append(item)
     added = _zernio(poster.add, items, body.when, body.at, body.gap_minutes, body.zone)
     return {"added": added, "items": poster.queue()}
@@ -2561,15 +2603,21 @@ live_chats: dict = {}
 live_clip_now: set[str] = set()
 
 
-def _live_chat(url, clock_start):
-    """Start reading the Twitch chat of a live channel link (None for other sites or when the
-    buyer turned chat off). Only the channel name is sent to Twitch."""
+def _live_chat(url, clock_start, video_id=None):
+    """Start reading the live chat: Twitch (channel link) or YouTube (live video). None for other
+    sites or when chat is turned off. Only the channel name / video id is sent."""
     from .livechat import LiveChat, channel_login
+    from .ytchat import YouTubeChat, is_youtube, video_id as yt_video_id
 
     if os.environ.get("CLIPSTUDIO_NO_CHAT") or os.environ.get("CLIPSTUDIO_LIVE_FAKE"):
         return None
     login = channel_login(url)
-    return LiveChat(login, clock_start).start() if login else None
+    if login:
+        return LiveChat(login, clock_start).start()
+    if is_youtube(url):
+        vid = yt_video_id(url) or (video_id if video_id and yt_video_id(f"https://youtu.be/{video_id}") else None)
+        return YouTubeChat(vid, clock_start).start() if vid else None
+    return None
 
 
 def _mmss(seconds):
@@ -2594,6 +2642,8 @@ def _live_recorder(ident, options, folder):
     meta = fetch_metadata(ytdlp_command(), options.source, folder, events[ident])
     if not meta.get("is_live"):
         raise MediaError("This stream isn't live right now. Go back and pick a part of the past stream instead.")
+    if meta.get("id"):
+        store.update(ident, live_video_id=str(meta["id"])[:40])  # YouTube chat needs the video id
     try:
         video, audio = choose_live_inputs(meta, live_record_height())
     except MediaError:
@@ -2745,7 +2795,7 @@ def run_live(ident, options, captions):
         store.update(ident, title=title, channel=channel[:80], source_path=str(recorder.target))
         live_recorders[ident] = recorder
         recorder.start()
-        chat = _live_chat(options.source, recorder.started)
+        chat = _live_chat(options.source, recorder.started, store.get(ident).get("live_video_id"))
         if chat:
             live_chats[ident] = chat
         _live_state(ident, state="recording", started=time.time(), chat="connecting" if chat else "none")
@@ -2938,3 +2988,9 @@ def licence_activate(body: LicenceRequest):
 @app.delete("/api/licence")
 def licence_remove():
     return _licence().remove()
+
+
+# ---------------- Creators, phone remote, update check, Report a problem, covers ----------------
+from .automation_api import router as _automation_router  # noqa: E402
+
+app.include_router(_automation_router)

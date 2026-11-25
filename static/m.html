@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FBF6EF">
+<title>MasterClip remote</title>
+<style>
+  :root { --bg:#FBF6EF; --card:#fff; --ink:#2A211C; --muted:#7a6d64; --brand:#EF6A3E; --bad:#c0392b; --line:#eadfd4; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; padding:16px; padding-bottom:40px; }
+  h1 { font-size:20px; margin:4px 0 14px; display:flex; align-items:center; gap:8px; }
+  .mark { width:28px; height:22px; border-radius:7px; background:var(--brand); display:inline-grid; place-items:center; color:#fff; font-size:12px; }
+  .card { background:var(--card); border-radius:18px; padding:16px; margin-bottom:14px; box-shadow:0 4px 18px #0000000d; }
+  label { display:block; font-weight:600; margin-bottom:6px; }
+  small, .muted { color:var(--muted); }
+  input { width:100%; font:inherit; padding:12px 14px; border:1.5px solid var(--line); border-radius:12px; background:#fff; }
+  input.pin { font-size:28px; letter-spacing:10px; text-align:center; }
+  button { font:inherit; font-weight:700; border:0; border-radius:14px; padding:14px; width:100%; cursor:pointer; }
+  .primary { background:var(--brand); color:#fff; }
+  .ghost { background:#f3ebe3; color:var(--ink); }
+  .danger { background:var(--bad); color:#fff; }
+  .big { font-size:22px; padding:22px; }
+  .row { display:flex; gap:10px; } .row > * { flex:1; }
+  .seg { display:flex; gap:6px; margin:6px 0 4px; } .seg button { padding:10px 0; background:#f3ebe3; color:var(--ink); }
+  .seg button.on { background:var(--ink); color:#fff; }
+  .msg { min-height:1.4em; color:var(--bad); font-weight:600; margin:8px 0 0; }
+  .meter { height:14px; background:#f3ebe3; border-radius:99px; overflow:hidden; margin:8px 0 4px; }
+  .meter span { display:block; height:100%; width:0; background:linear-gradient(90deg,#f6b26b,var(--brand),#d62f2f); transition:width .5s; }
+  .live { display:inline-block; background:var(--bad); color:#fff; border-radius:6px; padding:1px 8px; font-size:13px; font-weight:800; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--line); }
+  li:first-child { border-top:0; }
+  li span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  li a { color:var(--brand); font-weight:700; text-decoration:none; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+  <h1><span class="mark">▶</span> MasterClip remote</h1>
+
+  <section id="login" class="card" hidden>
+    <label for="pin">PIN</label>
+    <small>Type the 6 numbers shown on your PC (MasterClip → Phone remote).</small>
+    <form id="pinForm" style="margin-top:10px">
+      <input id="pin" class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" aria-label="PIN">
+      <button class="primary" style="margin-top:10px" type="submit">Connect</button>
+    </form>
+    <p id="pinMsg" class="msg" role="status"></p>
+  </section>
+
+  <section id="app" hidden>
+    <div id="startCard" class="card">
+      <label for="url">Live stream link</label>
+      <input id="url" type="url" placeholder="Paste a Twitch / YouTube / Kick live link" autocomplete="off">
+      <label style="margin-top:12px">Clip length</label>
+      <div class="seg" id="length">
+        <button type="button" data-v="15">15 s</button><button type="button" data-v="30" class="on">30 s</button>
+        <button type="button" data-v="45">45 s</button><button type="button" data-v="60">60 s</button>
+      </div>
+      <small>Your PC records the stream and clips the best moments until you press Stop.</small>
+      <button id="start" class="primary" style="margin-top:12px" type="button">Start clipping</button>
+    </div>
+
+    <div id="liveCard" class="card" hidden>
+      <p style="margin:0 0 4px"><span class="live">LIVE</span> <strong id="liveTitle"></strong></p>
+      <small id="liveMeta"></small>
+      <div class="meter" aria-hidden="true"><span id="hype"></span></div>
+      <small id="hypeText">Hype meter</small>
+      <button id="clipNow" class="primary big" style="margin-top:14px" type="button">✂ Clip now</button>
+      <small>Makes a clip of what just happened (about a minute).</small>
+      <button id="stop" class="danger" style="margin-top:12px" type="button">■ Stop</button>
+    </div>
+
+    <div class="card">
+      <strong>Clips</strong> <small id="clipsFrom"></small>
+      <ul id="clips"></ul>
+      <small id="noClips">No clips yet. They show up here as soon as they're made.</small>
+    </div>
+    <p id="msg" class="msg" role="status"></p>
+  </section>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+let length = 30, timer = null;
+
+async function call(path, body) {
+  const init = { method: body === undefined ? "GET" : "POST", credentials: "same-origin", headers: { "X-MasterClip": "1" } };
+  if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
+  const r = await fetch(path, init);
+  let data = null; try { data = await r.json(); } catch { data = null; }
+  if (!r.ok) { const e = new Error((data && typeof data.detail === "string" && data.detail) || "Something went wrong. Try again."); e.status = r.status; throw e; }
+  return data;
+}
+function show(signedIn) { $("#login").hidden = signedIn; $("#app").hidden = !signedIn; if (!signedIn) $("#pin").focus(); }
+function mmss(s) { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); }
+
+function paint(st) {
+  const live = st.live;
+  $("#liveCard").hidden = !live; $("#startCard").hidden = !!live;
+  if (live) {
+    $("#liveTitle").textContent = live.title;
+    $("#liveMeta").textContent = `${live.channel ? live.channel + " · " : ""}recorded ${mmss(live.recorded)} · ${live.message}`;
+    const hype = live.hype == null ? 0 : live.hype;
+    $("#hype").style.width = hype + "%";
+    $("#hypeText").textContent = live.hype == null ? "No chat on this stream: clips come from the video and sound." : `Chat: ${live.hype_label || "quiet"} (${hype}%)`;
+    $("#clipNow").disabled = live.clip_now; $("#clipNow").textContent = live.clip_now ? "Clipping…" : "✂ Clip now";
+  }
+  const list = $("#clips"); list.textContent = "";
+  for (const c of st.clips || []) {
+    const li = document.createElement("li");
+    const name = document.createElement("span"); name.textContent = c.title;
+    const a = document.createElement("a"); a.href = c.url; a.textContent = "Download"; a.setAttribute("download", "");
+    li.append(name, a); list.append(li);
+  }
+  $("#noClips").hidden = !!(st.clips && st.clips.length);
+  $("#clipsFrom").textContent = st.from ? "· " + st.from : "";
+}
+async function refresh() {
+  try { paint(await call("/m/api/state")); show(true); $("#msg").textContent = ""; }
+  catch (e) { if (e.status === 401) { show(false); stopPolling(); } else $("#msg").textContent = "Can't reach your PC. Is MasterClip still open?"; }
+}
+function startPolling() { stopPolling(); timer = setInterval(() => { if (!document.hidden) refresh(); }, 3000); }
+function stopPolling() { if (timer) clearInterval(timer); timer = null; }
+
+$("#pinForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); $("#pinMsg").textContent = "";
+  try { await call("/m/api/login", { pin: $("#pin").value }); $("#pin").value = ""; await refresh(); startPolling(); }
+  catch (err) { $("#pinMsg").textContent = err.message; }
+});
+$("#length").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  length = Number(b.dataset.v); document.querySelectorAll("#length button").forEach((x) => x.classList.toggle("on", x === b));
+});
+async function act(path, body, button) {
+  button.disabled = true; $("#msg").textContent = "";
+  try { paint(await call(path, body)); } catch (e) { if (e.status === 401) show(false); $("#msg").textContent = e.message; }
+  finally { button.disabled = false; }
+}
+$("#start").addEventListener("click", (e) => {
+  const url = $("#url").value.trim();
+  if (!/^https?:\/\//i.test(url)) { $("#msg").textContent = "Paste a full link that starts with https://"; return; }
+  act("/m/api/start", { url, length }, e.currentTarget);
+});
+$("#clipNow").addEventListener("click", (e) => act("/m/api/clip", {}, e.currentTarget));
+$("#stop").addEventListener("click", (e) => { if (confirm("Stop recording this stream?")) act("/m/api/stop", {}, e.currentTarget); });
+refresh().then(() => { if (!$("#app").hidden) startPolling(); });
+</script>
+</body>
+</html>
