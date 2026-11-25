@@ -12,6 +12,7 @@
   <script src="/static/framing.js" defer></script>
   <script src="/static/editor.js" defer></script>
   <script src="/static/designer.js" defer></script>
+  <script src="/static/overlays.js" defer></script>
   <script src="/static/app.js" defer></script>
   <script src="/static/posting.js" defer></script>
   <script src="/static/campaigns.js" defer></script>
@@ -202,6 +203,13 @@
           <div id="dFraming"></div>
         </div>
         <aside class="cap-panel" aria-labelledby="capTitle">
+          <div class="tabs design-tabs" role="tablist" aria-label="Design">
+            <button class="tab active" role="tab" type="button" data-dtab="captions">Captions</button>
+            <button class="tab" role="tab" type="button" data-dtab="cards">Cards</button>
+            <button class="tab" role="tab" type="button" data-dtab="brand">My brand</button>
+            <button class="tab" role="tab" type="button" data-dtab="outro">Outro &amp; music</button>
+          </div>
+          <div class="dtab" id="dtab-captions">
           <div class="cap-head"><h2 id="capTitle">Captions</h2><span id="capFor" class="muted"></span></div>
           <div class="cap-presets" id="capPresets">
             <button type="button" data-preset="pop1"><span class="demo pop">WOW</span><small>One-word pop</small></button>
@@ -257,6 +265,10 @@
               <option value="roman">Hinglish for Hindi (English letters)</option><option value="spoken">The language they speak (Hindi letters)</option><option value="en">English (translated)</option></select></label>
             <p class="hint" id="langHint">Hindi and other Indian languages use a better speech model that downloads once (about 480 MB).</p>
           </div>
+          </div>
+          <div class="dtab ov-tab" id="dtab-cards" hidden></div>
+          <div class="dtab ov-tab" id="dtab-brand" hidden></div>
+          <div class="dtab ov-tab" id="dtab-outro" hidden></div>
         </aside>
       </div>
       <div class="settings">

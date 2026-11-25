@@ -25,7 +25,7 @@ hidden = (
     + collect_submodules("tzdata")
     + ["keyring.backends.Windows", "multipart", "python_multipart"]
 )
-dev_only = ["tkinter", "playwright", "pytest", "_pytest", "IPython", "matplotlib", "PIL", "PyInstaller"]
+dev_only = ["tkinter", "playwright", "pytest", "_pytest", "IPython", "matplotlib", "PyInstaller"]  # PIL draws the cards (overlays.py)
 
 app = Analysis(
     [str(ROOT / "desktop.py")],
@@ -48,7 +48,7 @@ ytdlp = Analysis(
     pathex=[str(ROOT)],
     datas=collect_data_files("yt_dlp_ejs"),
     hiddenimports=collect_submodules("yt_dlp_ejs"),
-    excludes=dev_only + ["numpy", "cv2", "faster_whisper", "ctranslate2", "onnxruntime", "av", "webview"],
+    excludes=dev_only + ["PIL", "numpy", "cv2", "faster_whisper", "ctranslate2", "onnxruntime", "av", "webview"],
 )
 
 app_exe = EXE(

@@ -41,6 +41,12 @@ def render_clip(
     graph, W, H = build_filter(design, info.width, info.height)
     partial = out.with_name(f".{out.stem}.part{out.suffix}")
     joinable = out.suffix.lower() == ".mkv"
+    from . import overlays as ov
+
+    # Outro + music belong to a finished clip, not to a part that is joined into a long video later.
+    outro_len = 0.0 if joinable else ov.outro_seconds(design)
+    music = None if joinable else ov.music_file(design)
+    total = duration + outro_len
     segments = list(segments)
     shouts = []
     if design.shout and info.has_audio:
@@ -66,7 +72,7 @@ def render_clip(
         )
         command = [
             find_tool("ffmpeg"), "-nostdin", "-y",
-            "-ss", f"{start:.3f}", "-i", str(Path(source).resolve()), "-t", f"{duration:.3f}",
+            "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(Path(source).resolve()),
         ]
         inputs = 1
         audio_input = 0
@@ -77,9 +83,8 @@ def render_clip(
         audio_map = f"{audio_input}:a:0"
         audio_filter = ["-af", "asetpts=PTS-STARTPTS"]
         if shouts:
-            from .effects import boom_wav, shake_filter
+            from .effects import boom_wav
 
-            graph += ";" + shake_filter(shouts, W, H, "base", "shk")
             if design.sfx:
                 command += ["-i", str(boom_wav(temp / "boom.wav"))]
                 n = len(shouts)
@@ -92,9 +97,60 @@ def render_clip(
                           + f"amix=inputs={n + 1}:duration=first:dropout_transition=0:normalize=0[aout]")
                 audio_map, audio_filter = "[aout]", []
                 inputs += 1
+
+        def still(name, image, seconds=duration):
+            """Add a PNG as a looping input; returns its input number."""
+            nonlocal command, inputs
+            path = temp / name
+            image.save(path)
+            command += ["-loop", "1", "-framerate", "30", "-t", f"{seconds:.3f}", "-i", str(path)]
+            inputs += 1
+            return inputs - 1
+
+        base = "base"
+        frame = ov.frame_parts(design)
+        if frame:  # background card: the video shrinks into a rounded card on blur / colour / picture
+            fx, fy, fw, fh, mask, bg = frame
+            m = still("frame-mask.png", mask)
+            video_in = "base"
+            if bg is None:
+                graph += (f";[base]split[fra][frb];[fra]scale={max(2, W // 16 * 2)}:{max(2, H // 16 * 2)},"
+                          f"boxblur=6:2,scale={W}:{H},eq=brightness=-0.12,setsar=1[frbg]")
+                video_in = "frb"
+            else:
+                b = still("frame-bg.png", bg.convert("RGB"))
+                graph += f";[{b}:v]scale={W}:{H},setsar=1[frbg]"
+            graph += (f";[{video_in}]scale={fw}:{fh},format=rgba[frv];[{m}:v]format=gray[frm];"
+                      f"[frv][frm]alphamerge[frr];[frbg][frr]overlay={fx}:{fy}:shortest=1,setsar=1[framed]")
+            base = "framed"
+        card = design.card
+        if card.kind != "none":
+            until = duration if card.seconds <= 0 else min(duration, card.seconds)
+            enable = f":enable='between(t,0,{until:.2f})'" if until < duration else ""
+            if card.kind == "news":
+                news, strip, ty, loop_w, x0 = ov.news_images(design, title_text)
+                s = still("ticker.png", strip)
+                n = still("news.png", news)
+                tw = ov.ticker_width(design, x0)
+                speed = max(40, round(W * 0.11))
+                graph += (f";[{s}:v]format=rgba,crop={tw}:{strip.height}:x='mod(t*{speed},{loop_w})':y=0[tk]"
+                          f";[{base}][tk]overlay={x0}:{ty}{enable}[nw1];[{n}:v]format=rgba[nwf]"
+                          f";[nw1][nwf]overlay=0:0{enable}[carded]")
+            else:
+                made = ov.card_image(design, title_text)
+                img, (cx, cy) = made
+                c = still("card.png", img)
+                fade = f",fade=out:st={max(0.0, until - 0.25):.2f}:d=0.25:alpha=1" if enable else ""
+                graph += (f";[{c}:v]format=rgba,fade=in:st=0:d=0.25:alpha=1{fade}[cd]"
+                          f";[{base}][cd]overlay={cx}:{cy}{enable}[carded]")
+            base = "carded"
+        if shouts:
+            from .effects import shake_filter
+
+            graph += ";" + shake_filter(shouts, W, H, base, "shk")
         emoji = emoji_overlays(design, segments, duration)
         last = "subs"
-        graph += f";[{'shk' if shouts else 'base'}]ass=filename=captions.ass:fontsdir=fonts[{last}]"
+        graph += f";[{'shk' if shouts else base}]ass=filename=captions.ass:fontsdir=fonts[{last}]"
         for n, (png, at, until, x, y, size) in enumerate(emoji):
             output_scale = W / CANVAS[design.aspect][0]
             x, y, size = round(x * output_scale), round(y * output_scale), max(2, round(size * output_scale))
@@ -106,22 +162,72 @@ def render_clip(
             )
             last = f"o{n}"
             inputs += 1
-        graph += f";[{last}]format=yuv420p[v]"
+        for name, made in (("logo", ov.logo_image(design)), ("handles", ov.handles_image(design))):
+            if made:
+                img, (bx, by) = made
+                i = still(f"{name}.png", img)
+                graph += f";[{last}][{i}:v]overlay={bx}:{by}[br{name}]"
+                last = f"br{name}"
+        graph += f";[{last}]format=yuv420p[{'vm' if outro_len else 'v'}]"
+        audio = audio_map[1:-1] if audio_map.startswith("[") else None
+        if (outro_len or music) and audio is None:
+            graph += f";[{audio_input}:a]asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo[am0]"
+            audio = "am0"
+        if outro_len:
+            graph += (f";[{audio}]aformat=channel_layouts=stereo,apad=whole_dur={duration:.3f},"
+                      f"atrim=0:{duration:.3f},asetpts=PTS-STARTPTS[am]")
+            silent = ["-f", "lavfi", "-t", f"{outro_len:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+            if design.outro.mode == "card":
+                o = still("outro.png", ov.outro_image(design).convert("RGB"), outro_len)
+                graph += f";[{o}:v]scale={W}:{H},fps=30,format=yuv420p,setsar=1,fade=in:st=0:d=0.35[vo]"
+                command += silent
+                graph += f";[{inputs}:a]asetpts=PTS-STARTPTS[ao]"
+                inputs += 1
+            else:
+                clip = ov.asset_path(design.outro.video)
+                command += ["-t", f"{outro_len:.3f}", "-i", str(clip)]
+                o = inputs
+                inputs += 1
+                graph += (f";[{o}:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps=30,"
+                          f"format=yuv420p,setsar=1,trim=0:{outro_len:.3f},setpts=PTS-STARTPTS[vo]")
+                if probe_media(clip).has_audio:
+                    graph += (f";[{o}:a]aresample=48000,aformat=channel_layouts=stereo,apad=whole_dur={outro_len:.3f},"
+                              f"atrim=0:{outro_len:.3f},asetpts=PTS-STARTPTS[ao]")
+                else:
+                    command += silent
+                    graph += f";[{inputs}:a]asetpts=PTS-STARTPTS[ao]"
+                    inputs += 1
+            graph += ";[vm][am][vo][ao]concat=n=2:v=1:a=1[v][ac]"
+            audio = "ac"
+        if music:
+            command += ["-stream_loop", "-1", "-i", str(music)]
+            graph += (f";[{inputs}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:{total:.3f},"
+                      f"asetpts=PTS-STARTPTS,volume='{ov.music_volume_expr(design, total)}':eval=frame[mu]")
+            inputs += 1
+            if design.music.duck:  # quieter while someone talks
+                graph += (f";[{audio}]asplit[vx][sc];[mu][sc]sidechaincompress=threshold=0.03:ratio=8:"
+                          f"attack=20:release=350[mud];[vx][mud]amix=inputs=2:duration=first:"
+                          f"dropout_transition=0:normalize=0[amx]")
+            else:
+                graph += f";[{audio}][mu]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[amx]"
+            audio = "amx"
+        if audio:
+            audio_map, audio_filter = f"[{audio}]", []
         video = video_args(20)
         tail = [
             "-ar", "48000", "-ac", "2", *audio_filter,
             *(["-c:a", "pcm_s16le"] if joinable else ["-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart"]),
-            "-t", f"{duration:.3f}", str(partial),
+            "-t", f"{total:.3f}", str(partial),
         ]
         head = [*command, "-filter_complex", graph, "-map", "[v]", "-map", audio_map]
         # libass reads captions.ass + fonts/ relative to the working folder.
         try:
-            _run([*head, *video, *tail], cancel_event, timeout=max(600, int(duration * 20)), cwd=temp)
+            _run([*head, *video, *tail], cancel_event, timeout=max(600, int(total * 20)), cwd=temp)
         except MediaError:
             hardware = is_hardware(video)
             if not hardware or (cancel_event is not None and cancel_event.is_set()):
                 raise
             mark_broken(hardware)  # e.g. a driver hiccup or a size the chip can't do: CPU from now on
-            _run([*head, *video_args(20), *tail], cancel_event, timeout=max(600, int(duration * 20)), cwd=temp)
+            _run([*head, *video_args(20), *tail], cancel_event, timeout=max(600, int(total * 20)), cwd=temp)
     os.replace(partial, out)
     return out

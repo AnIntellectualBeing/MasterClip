@@ -139,6 +139,105 @@ class TitleStyle(BaseModel):
         return value if value in FONTS else "Poppins ExtraBold"
 
 
+_ASSET = re.compile(r"^[0-9a-f]{16}\.(png|jpg|jpeg|webp|mp4|mov|webm|mkv|mp3|wav|m4a|aac|ogg)$")
+
+
+def _asset(value):
+    """An uploaded file in <data>/brand (see overlays.save_asset); blank = none."""
+    value = str(value or "").strip().lower()
+    if value and not _ASSET.fullmatch(value):
+        raise ValueError("That file isn't one of your uploaded files.")
+    return value
+
+
+CARD_KINDS = ("none", "x_post", "ig_comment", "ig_question", "ig_poll", "yt_comment", "tiktok_hook", "news")
+
+
+class PollOption(BaseModel):
+    text: str = Field(default="", max_length=40)
+    pct: int = Field(default=50, ge=0, le=100)
+
+
+class CardStyle(BaseModel):
+    """A social post card drawn over the video (Cards tab). Empty text = the clip's title."""
+    kind: Literal["none", "x_post", "ig_comment", "ig_question", "ig_poll", "yt_comment", "tiktok_hook", "news"] = "none"
+    theme: Literal["light", "dark"] = "light"
+    name: str = Field(default="", max_length=40)      # blank = the channel name
+    handle: str = Field(default="", max_length=40)    # blank = the channel name
+    verified: bool = True
+    avatar: str = ""                                   # uploaded picture; blank = first letter in a circle
+    text: str = Field(default="", max_length=280)
+    options: list[PollOption] = Field(
+        default_factory=lambda: [PollOption(text="Yes", pct=64), PollOption(text="No", pct=36)],
+        min_length=2, max_length=4)
+    ticker: str = Field(default="", max_length=200)
+    size: float = Field(default=0.86, ge=0.35, le=1.0)  # card width as a share of the frame's short side
+    x: float = Field(default=0.5, ge=0, le=1)
+    y: float = Field(default=0.5, ge=0, le=1)
+    seconds: float = Field(default=0.0, ge=0, le=600)   # 0 = whole clip
+
+    _asset = field_validator("avatar")(_asset)
+
+
+class Handle(BaseModel):
+    platform: Literal["youtube", "twitch", "kick", "instagram", "tiktok", "x"] = "youtube"
+    name: str = Field(default="", max_length=40)
+
+
+class BrandStyle(BaseModel):
+    """My brand tab: social handles bar, logo, background card. All off by default."""
+    handles: list[Handle] = Field(default_factory=list, max_length=5)
+    handles_x: float = Field(default=0.5, ge=0, le=1)
+    handles_y: float = Field(default=0.9, ge=0, le=1)
+    handles_size: int = Field(default=34, ge=16, le=90)
+    logo: str = ""
+    logo_corner: Literal["tl", "tr", "bl", "br"] = "tr"
+    logo_size: float = Field(default=0.16, ge=0.05, le=0.5)
+    logo_opacity: float = Field(default=0.85, ge=0.1, le=1)
+    frame: Literal["none", "blur", "color", "gradient", "image"] = "none"
+    frame_color: str = "#101418"
+    frame_color2: str = "#6A3DF0"
+    frame_image: str = ""
+    frame_pad: float = Field(default=0.06, ge=0.02, le=0.2)
+    frame_radius: int = Field(default=36, ge=0, le=90)
+
+    _colors = field_validator("frame_color", "frame_color2")(_hex)
+    _assets = field_validator("logo", "frame_image")(_asset)
+
+
+class OutroStyle(BaseModel):
+    """A few seconds added after the clip: a drawn end card or the buyer's own video."""
+    mode: Literal["off", "card", "video"] = "off"
+    text: str = Field(default="Follow for more", max_length=60)
+    sub: str = Field(default="", max_length=60)  # blank = @channel
+    bg: str = "#111111"
+    color: str = "#FFFFFF"
+    accent: str = "#FFD233"
+    font: str = "Anton"
+    picture: str = ""
+    seconds: float = Field(default=3.0, ge=2, le=4)
+    video: str = ""
+
+    _colors = field_validator("bg", "color", "accent")(_hex)
+    _assets = field_validator("picture", "video")(_asset)
+
+    @field_validator("font")
+    @classmethod
+    def known_font(cls, value):
+        return value if value in FONTS else "Anton"
+
+
+class MusicStyle(BaseModel):
+    """One song under the clip, quieter while people talk, rising for the last seconds."""
+    file: str = ""
+    volume: float = Field(default=0.18, ge=0, le=1)
+    peak: float = Field(default=0.6, ge=0, le=1)
+    rise: float = Field(default=3.0, ge=0, le=10)  # 0 = no rise
+    duck: bool = True
+
+    _asset = field_validator("file")(_asset)
+
+
 class Design(BaseModel):
     template: str = Field(default="big_captions", max_length=40)
     aspect: Literal["9:16", "16:9", "1:1"] = "9:16"
@@ -175,6 +274,11 @@ class Design(BaseModel):
     credit_x: float = Field(default=0.5, ge=0, le=1)
     credit_y: float = Field(default=0.965, ge=0, le=1)
     credit_size: int = Field(default=30, ge=14, le=120)
+    credit_style: Literal["at", "clip"] = "at"  # "@name" or "Clip: name"
+    card: CardStyle = Field(default_factory=CardStyle)
+    brand: BrandStyle = Field(default_factory=BrandStyle)
+    outro: OutroStyle = Field(default_factory=OutroStyle)
+    music: MusicStyle = Field(default_factory=MusicStyle)
     # When someone shouts: the shouted word big in yellow, a quick shake, and (sfx) a boom sound.
     shout: bool = False
     sfx: bool = True

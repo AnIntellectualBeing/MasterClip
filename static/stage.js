@@ -12,8 +12,8 @@
     outline: { color: "#fff", stroke: "#000", w: 8 },
     meme: { color: "#111" },
   };
-  const LIMITS = { caption: [24, 220], title: [24, 200], credit: [14, 120] };
-  const NAMES = { game: "Gameplay", cam: "Streamer cam", extra: "Extra part", caption: "Captions", title: "Title", credit: "Credit" };
+  const LIMITS = { caption: [24, 220], title: [24, 200], credit: [14, 120], card: [0.35, 1], handles: [16, 90] };
+  const NAMES = { game: "Gameplay", cam: "Streamer cam", extra: "Extra part", caption: "Captions", title: "Title", credit: "Credit", card: "Card", handles: "Handles bar" };
   const CAM_LAYOUTS = ["stack", "corner", "side", "trio"];
   const SIDE = { "9:16": [[0, 0.34, 0.62, 0.32], [0.62, 0.34, 0.38, 0.32]], "16:9": [[0, 0, 0.68, 1], [0.68, 0.25, 0.32, 0.5]], "1:1": [[0, 0.2, 0.62, 0.6], [0.62, 0.2, 0.38, 0.6]] };
   const TRIO = [[0, 0, 1, 0.3], [0, 0.3, 1, 0.42], [0, 0.72, 1, 0.28]]; // cam, game, extra (= design._TRIO)
@@ -190,6 +190,18 @@
     return c;
   }
 
+  const assetImages = {};
+  function assetImage(id, onload) {
+    if (!id) return null;
+    if (!assetImages[id]) {
+      const img = new Image();
+      img.onload = onload;
+      img.src = `/api/brand-assets/${id}`;
+      assetImages[id] = img;
+    }
+    return assetImages[id];
+  }
+
   /* ---- the stage ---- */
   function create(host, opts = {}) {
     const root = document.createElement("div");
@@ -201,6 +213,9 @@
       <div class="st-box st-cam" data-part="cam"><span class="st-tag">Streamer cam</span></div>
       <div class="st-box st-extra" data-part="extra"><span class="st-tag">Extra part</span></div>
       <div class="st-safe" hidden><i class="top"></i><i class="bottom"></i><i class="right"></i></div>
+      <img class="st-logo" alt="" hidden>
+      <div class="st-ov st-card" data-part="card" hidden><img alt="" draggable="false"></div>
+      <div class="st-ov st-handles" data-part="handles" hidden><img alt="" draggable="false"></div>
       <img class="st-emoji" alt="" hidden>
       <div class="st-text st-caption" data-part="caption"></div>
       <div class="st-text st-title" data-part="title"></div>
@@ -210,7 +225,8 @@
       <i class="st-guide h" hidden></i><i class="st-guide h" hidden></i>`;
     host.replaceChildren(root);
     const q = (s) => root.querySelector(s);
-    const parts = { game: q(".st-game"), cam: q(".st-cam"), extra: q(".st-extra"), caption: q(".st-caption"), title: q(".st-title"), credit: q(".st-credit") };
+    const parts = { game: q(".st-game"), cam: q(".st-cam"), extra: q(".st-extra"), caption: q(".st-caption"), title: q(".st-title"), credit: q(".st-credit"),
+      card: q(".st-card"), handles: q(".st-handles") };
     const isBox = (name) => name === "game" || name === "cam" || name === "extra";
     for (const [name, node] of Object.entries(parts)) {
       const corners = isBox(name) ? ["nw", "ne", "sw", "se"] : ["se"];
@@ -269,6 +285,40 @@
     }
 
     function drawCanvas() {
+      drawLayout();
+      drawFrame();
+    }
+    // Background card (My brand): the picture shrinks into a rounded card on blur / colour / picture,
+    // like overlays.frame_parts() + the renderer.
+    let frameCopy = null;
+    function drawFrame() {
+      const d = st.d, b = d.brand;
+      if (!b || !b.frame || b.frame === "none") return;
+      const [W, H] = CANVAS[d.aspect];
+      const cw = canvas.width, ch = canvas.height, k = cw / W, side = Math.min(W, H);
+      frameCopy = frameCopy || document.createElement("canvas");
+      frameCopy.width = cw; frameCopy.height = ch;
+      frameCopy.getContext("2d").drawImage(canvas, 0, 0);
+      const ctx = canvas.getContext("2d");
+      const m = Math.round((b.frame_pad * side) / 2) * 2 * k;
+      ctx.save();
+      if (b.frame === "blur") { ctx.filter = "blur(10px) brightness(.85)"; ctx.drawImage(frameCopy, -20, -20, cw + 40, ch + 40); ctx.filter = "none"; }
+      else if (b.frame === "gradient") { const g = ctx.createLinearGradient(0, 0, 0, ch); g.addColorStop(0, b.frame_color); g.addColorStop(1, b.frame_color2); ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch); }
+      else {
+        ctx.fillStyle = b.frame_color; ctx.fillRect(0, 0, cw, ch);
+        const pic = b.frame === "image" && assetImage(b.frame_image, () => paint());
+        if (pic && pic.complete && pic.naturalWidth) {
+          ctx.filter = "blur(8px)"; cover(ctx, pic, 0, 0, pic.naturalWidth, pic.naturalHeight, 0, 0, cw, ch, 0.5);
+          ctx.filter = "none"; ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(0, 0, cw, ch);
+        }
+      }
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(m, m, cw - 2 * m, ch - 2 * m, (b.frame_radius * side / 1080) * k); else ctx.rect(m, m, cw - 2 * m, ch - 2 * m);
+      ctx.clip();
+      ctx.drawImage(frameCopy, m, m, cw - 2 * m, ch - 2 * m);
+      ctx.restore();
+    }
+    function drawLayout() {
       const d = st.d;
       if (!d) return;
       const [W, H] = CANVAS[d.aspect];
@@ -492,6 +542,88 @@
       credit.style.top = d.credit_y * 100 + "%";
       credit.style.fontSize = d.credit_size * k + "px";
     }
+    /* Cards, handles bar and logo come from the engine (/api/overlay-preview) so they look exactly like the video. */
+    const ov = { card: { key: "", url: "", w: 0, h: 0, size: 0 }, handles: { key: "", url: "", w: 0, h: 0, size: 0 }, timer: 0 };
+    function overlayDesign() {
+      const d = st.d;
+      return { ...d, credit: d.credit || st.creditFallback || "", resolution: 1080 };
+    }
+    function wanted(part) {
+      const d = st.d;
+      if (part === "card") {
+        const c = d.card;
+        if (!c || c.kind === "none") return "";
+        return JSON.stringify([d.aspect, c.kind, c.theme, c.name, c.handle, c.verified, c.avatar, c.text, c.options, c.ticker,
+          c.kind === "news" ? 0 : c.size, d.credit || st.creditFallback, st.title]);
+      }
+      const b = d.brand;
+      return b && b.handles && b.handles.some((h) => (h.name || "").trim()) ? JSON.stringify([d.aspect, b.handles, b.handles_size]) : "";
+    }
+    function fetchOverlays() {
+      if (!st.d) return;
+      for (const part of ["card", "handles"]) {
+        const key = wanted(part), slot = ov[part];
+        if (key === slot.key) continue;
+        slot.key = key;
+        if (!key) { slot.url = ""; continue; }
+        const size = part === "card" ? st.d.card.size : st.d.brand.handles_size;
+        fetch("/api/overlay-preview", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ design: overlayDesign(), part, title: st.title || "" }) })
+          .then((r) => (r.status === 200 ? r.blob() : null))
+          .then((blob) => {
+            if (slot.key !== key) return;
+            const img = new Image();
+            const url = blob ? URL.createObjectURL(blob) : "";
+            img.onload = () => {
+              if (slot.key !== key) return;
+              if (slot.url) URL.revokeObjectURL(slot.url);
+              Object.assign(slot, { url, w: img.naturalWidth, h: img.naturalHeight, size });
+              paintOverlays(true);
+            };
+            if (url) img.src = url; else slot.url = "";
+          })
+          .catch(() => {});
+      }
+    }
+    function placeOverlay(node, slot, w, h, cx, cy) {
+      // w, h, cx, cy in frame px (1080 reference); kept inside the frame like overlays.card_box()
+      const [W, H] = CANVAS[st.d.aspect];
+      const x = Math.max(0, Math.min(W - w, cx - w / 2)), y = Math.max(0, Math.min(H - h, cy - h / 2));
+      const img = node.querySelector("img");
+      if (img.getAttribute("src") !== slot.url) img.src = slot.url;
+      Object.assign(node.style, { left: (x / W) * 100 + "%", top: (y / H) * 100 + "%", width: (w / W) * 100 + "%", height: (h / H) * 100 + "%" });
+    }
+    function paintOverlays(fresh) {
+      const d = st.d, [W, H] = CANVAS[d.aspect], side = Math.min(W, H);
+      if (!fresh) { clearTimeout(ov.timer); ov.timer = setTimeout(fetchOverlays, 160); }
+      const card = d.card || {}, cs = ov.card;
+      parts.card.hidden = !card.kind || card.kind === "none" || !cs.url || !wanted("card");
+      if (!parts.card.hidden) {
+        const news = card.kind === "news";
+        parts.card.classList.toggle("locked", news);
+        if (news) placeOverlay(parts.card, cs, W, H, W / 2, H / 2);
+        else { const w = card.size * side, h = cs.w ? (w * cs.h) / cs.w : 0; placeOverlay(parts.card, cs, w, h, card.x * W, card.y * H); }
+        parts.card.classList.toggle("timed-out", !!card.seconds && st.time > card.seconds);
+      }
+      const b = d.brand || {}, hs = ov.handles;
+      parts.handles.hidden = !hs.url || !wanted("handles");
+      if (!parts.handles.hidden && hs.size) {
+        const k = b.handles_size / hs.size, w = Math.min(W * 0.96, hs.w * k), h = hs.h * (w / hs.w);
+        placeOverlay(parts.handles, hs, w, h, b.handles_x * W, b.handles_y * H);
+      }
+      const logo = q(".st-logo");
+      logo.hidden = !b.logo;
+      if (b.logo) {
+        const src = `/api/brand-assets/${b.logo}`;
+        if (logo.getAttribute("src") !== src) logo.src = src;
+        const m = 0.035 * side, w = b.logo_size * side, corner = b.logo_corner || "tr";
+        Object.assign(logo.style, {
+          width: (w / W) * 100 + "%", opacity: b.logo_opacity,
+          left: corner.includes("l") ? (m / W) * 100 + "%" : "", right: corner.includes("r") ? (m / W) * 100 + "%" : "",
+          top: corner.includes("t") ? (m / H) * 100 + "%" : "", bottom: corner.includes("b") ? (m / H) * 100 + "%" : "",
+        });
+      }
+    }
     function paint() {
       if (!st.d) return;
       root.classList.toggle("landscape", st.d.aspect === "16:9");
@@ -501,6 +633,7 @@
       paintBoxes();
       paintCaption();
       paintTitle();
+      paintOverlays();
       for (const [name, node] of Object.entries(parts)) node.classList.toggle("selected", st.selected === name);
     }
 
@@ -554,14 +687,18 @@
       const d = st.d;
       if (name === "caption") return { x: d.caption.x, y: d.caption.y, size: d.caption.size };
       if (name === "title") return { x: d.title.x, y: d.title.y, size: d.title.size };
+      if (name === "card") return { x: d.card.x, y: d.card.y, size: d.card.size };
+      if (name === "handles") return { x: d.brand.handles_x, y: d.brand.handles_y, size: d.brand.handles_size };
       return { x: d.credit_x, y: d.credit_y, size: d.credit_size };
     }
     function setText(name, s) {
       const d = st.d;
       const x = r4(clamp(s.x, 0.02, 0.98)), y = r4(clamp(s.y, 0.02, 0.98));
       const [lo, hi] = LIMITS[name];
-      const size = Math.round(clamp(s.size, lo, hi));
-      if (name === "caption") Object.assign(d.caption, { x, y, size });
+      const size = name === "card" ? Math.round(clamp(s.size, lo, hi) * 100) / 100 : Math.round(clamp(s.size, lo, hi));
+      if (name === "card") Object.assign(d.card, { x, y, size });
+      else if (name === "handles") Object.assign(d.brand, { handles_x: x, handles_y: y, handles_size: size });
+      else if (name === "caption") Object.assign(d.caption, { x, y, size });
       else if (name === "title") Object.assign(d.title, { x, y, size });
       else Object.assign(d, { credit_x: x, credit_y: y, credit_size: size });
     }
@@ -673,7 +810,13 @@
       setSafe(on) { st.safe = !!on; paint(); },
       setWords(words) { st.words = words || []; },
       setTime(t) { st.time = t; },
-      tick(t) { st.time = t; if (st.d) paintCaption(); },
+      tick(t) {
+        st.time = t;
+        if (!st.d) return;
+        paintCaption();
+        const c = st.d.card;
+        parts.card.classList.toggle("timed-out", !!(c && c.seconds && t > c.seconds));
+      },
       setTitle(text) { st.title = text || ""; },
       destroy() { if (ro) ro.disconnect(); root.remove(); },
     });
