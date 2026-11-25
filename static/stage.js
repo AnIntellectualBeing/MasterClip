@@ -13,7 +13,10 @@
     meme: { color: "#111" },
   };
   const LIMITS = { caption: [24, 220], title: [24, 200], credit: [14, 120] };
-  const NAMES = { game: "Gameplay", cam: "Streamer cam", caption: "Captions", title: "Title", credit: "Credit" };
+  const NAMES = { game: "Gameplay", cam: "Streamer cam", extra: "Extra part", caption: "Captions", title: "Title", credit: "Credit" };
+  const CAM_LAYOUTS = ["stack", "corner", "side", "trio"];
+  const SIDE = { "9:16": [[0, 0.34, 0.62, 0.32], [0.62, 0.34, 0.38, 0.32]], "16:9": [[0, 0, 0.68, 1], [0.68, 0.25, 0.32, 0.5]], "1:1": [[0, 0.2, 0.62, 0.6], [0.62, 0.2, 0.38, 0.6]] };
+  const TRIO = [[0, 0, 1, 0.3], [0, 0.3, 1, 0.42], [0, 0.72, 1, 0.28]]; // cam, game, extra (= design._TRIO)
   const SNAP = 0.012; // how close (share of the frame) before a part snaps to a guide
   const PLACEHOLDER_CAM = [0.02, 0.6, 0.24, 0.36];
 
@@ -21,8 +24,8 @@
   function effectiveLayout(d) {
     const layout = d.layout;
     if (layout === "meme" && d.title && d.title.show === false) return "full"; // title removed: no empty bar
-    if ((layout === "stack" || layout === "corner") && !d.cam_roi) return "full";
-    if (d.aspect !== "9:16" && (layout === "stack" || layout === "split")) return layout === "stack" ? "corner" : "full";
+    if (CAM_LAYOUTS.includes(layout) && !d.cam_roi) return "full";
+    if (d.aspect !== "9:16" && ["stack", "split", "trio"].includes(layout)) return { stack: "corner", split: "full", trio: "side" }[layout];
     return layout;
   }
   function gameRegion(d) {
@@ -36,8 +39,18 @@
       return d.cam_side === "top" ? [0, 0, 1, d.split] : [0, 1 - d.split, 1, d.split];
     }
     if (l === "corner") return d.cam_rect || [0.05, 0.05, 0.4, 0.2];
+    if (l === "side") return d.cam_rect || SIDE[d.aspect][1];
+    if (l === "trio") return d.cam_rect || TRIO[0];
     return null;
   }
+  // Mirror of design.extra_area(): the third part (Trio), or null.
+  function extraArea(d) {
+    const l = effectiveLayout(d);
+    if (l === "trio") return d.extra_rect || TRIO[2];
+    if (l === "side" && d.extra_rect) return d.extra_rect;
+    return null;
+  }
+  function extraRegion(d) { return d.extra_roi || [0.3, 0.3, 0.4, 0.4]; }
   // Mirror of design.cam_cover(): blur the stream's own cam when it was removed or moved into a box.
   function coversCam(d) {
     if (!d.cam_roi || effectiveLayout(d) === "split") return false;
@@ -45,10 +58,12 @@
   }
   function gameArea(d) {
     const l = effectiveLayout(d);
-    if (l === "full" && (d.layout === "stack" || d.layout === "corner")) return [0, 0, 1, 1]; // no cam found
+    if (l === "full" && CAM_LAYOUTS.includes(d.layout)) return [0, 0, 1, 1]; // no cam found
     if (d.game_rect && l !== "split") return d.game_rect;
     if (l === "stack") return d.cam_side === "top" ? [0, d.split, 1, 1 - d.split] : [0, 0, 1, 1 - d.split];
     if (l === "meme") return [0, d.meme_bar, 1, 1 - d.meme_bar];
+    if (l === "side") return SIDE[d.aspect][0];
+    if (l === "trio") return TRIO[1];
     return [0, 0, 1, 1];
   }
 
@@ -179,6 +194,8 @@
       <canvas class="st-canvas"></canvas>
       <div class="st-box st-game" data-part="game"><span class="st-tag">Gameplay</span></div>
       <div class="st-box st-cam" data-part="cam"><span class="st-tag">Streamer cam</span></div>
+      <div class="st-box st-extra" data-part="extra"><span class="st-tag">Extra part</span></div>
+      <div class="st-safe" hidden><i class="top"></i><i class="bottom"></i><i class="right"></i></div>
       <img class="st-emoji" alt="" hidden>
       <div class="st-text st-caption" data-part="caption"></div>
       <div class="st-text st-title" data-part="title"></div>
@@ -188,16 +205,17 @@
       <i class="st-guide h" hidden></i><i class="st-guide h" hidden></i>`;
     host.replaceChildren(root);
     const q = (s) => root.querySelector(s);
-    const parts = { game: q(".st-game"), cam: q(".st-cam"), caption: q(".st-caption"), title: q(".st-title"), credit: q(".st-credit") };
+    const parts = { game: q(".st-game"), cam: q(".st-cam"), extra: q(".st-extra"), caption: q(".st-caption"), title: q(".st-title"), credit: q(".st-credit") };
+    const isBox = (name) => name === "game" || name === "cam" || name === "extra";
     for (const [name, node] of Object.entries(parts)) {
-      const corners = name === "game" || name === "cam" ? ["nw", "ne", "sw", "se"] : ["se"];
+      const corners = isBox(name) ? ["nw", "ne", "sw", "se"] : ["se"];
       corners.forEach((c) => { const h = document.createElement("span"); h.className = "st-handle " + c; h.dataset.corner = c; node.append(h); });
       node.title = `Drag to move ${NAMES[name].toLowerCase()} · drag a corner to resize`;
     }
     const canvas = q(".st-canvas"), emojiImg = q(".st-emoji"), shoutBox = q(".st-shout");
     const st = {
       root, d: null, media: null, words: [], time: 0, title: "", selected: null, creditFallback: "",
-      editable: opts.editable !== false, placeholderCam: !!opts.placeholderCam,
+      editable: opts.editable !== false, placeholderCam: !!opts.placeholderCam, safe: false,
       onChange: opts.onChange || (() => {}), onSelect: opts.onSelect || (() => {}),
     };
 
@@ -209,15 +227,15 @@
       if (size[0] && size[1] > size[0] * 1.15) {
         // Mirror of design.adapt_to_source(): a vertical stream fills the Short, no cam box or split,
         // and sits whole on a blurred copy in a 16:9 / square video.
-        d = { ...d, hide_cam: false, cam_rect: null, game_rect: null, game_roi: null, cam_roi: null,
-          layout: ["stack", "corner", "split"].includes(d.layout) ? "full" : d.layout,
+        d = { ...d, hide_cam: false, cam_rect: null, game_rect: null, game_roi: null, cam_roi: null, extra_rect: null, extra_roi: null, bg_blur: false,
+          layout: [...CAM_LAYOUTS, "split"].includes(d.layout) ? "full" : d.layout,
           fill: d.aspect !== "9:16" && d.fill === "zoom" ? "blur" : d.fill };
         return d;
       }
       if (st.placeholderCam && !d.cam_roi) {
         const real = st.media && mediaSize(st.media)[0];
         if (!real) return { ...d, cam_roi: PLACEHOLDER_CAM };
-        if (d.layout === "stack" || d.layout === "corner") return { ...d, cam_roi: PLACEHOLDER_CAM, game_roi: d.game_roi || [0, 0, 1, 1], _fakeCam: true };
+        if (CAM_LAYOUTS.includes(d.layout)) return { ...d, cam_roi: PLACEHOLDER_CAM, game_roi: d.game_roi || [0, 0, 1, 1], _fakeCam: true };
       }
       return d;
     }
@@ -268,13 +286,43 @@
         cover(ctx, media, g[0] + g[2] - half, g[1], half, g[3], 0, ch / 2, cw, ch / 2, 0.5);
         return;
       }
-      fit(ctx, gamePic, g.map((n) => n * gs), px(gameArea(v), cw, ch), d.fill, d.focus_x);
+      const ga = px(gameArea(v), cw, ch);
+      if (v.bg_blur && layout !== "meme" && !(ga[0] <= 0 && ga[1] <= 0 && ga[2] >= cw && ga[3] >= ch)) {
+        // = design._compose(): the space around the boxes is a blurred, slightly darker copy
+        ctx.save(); ctx.filter = "blur(16px) brightness(.85)";
+        cover(ctx, media, 0, 0, mw, mh, -20, -20, cw + 40, ch + 40, 0.5);
+        ctx.restore();
+      }
+      fit(ctx, gamePic, g.map((n) => n * gs), ga, d.fill, d.focus_x);
+      const er = extraArea(v);
+      if (er) {
+        const e = px(extraRegion(v), mw, mh), eo = px(er, cw, ch);
+        ctx.save(); ctx.beginPath(); ctx.rect(eo[0], eo[1], eo[2], eo[3]); ctx.clip();
+        cover(ctx, media, e[0], e[1], e[2], e[3], eo[0], eo[1], eo[2], eo[3], 0.5);
+        ctx.restore();
+      }
       const cr = camOutputRect(v);
       if (!cr) return;
-      const o = px(cr, cw, ch);
-      const b = layout === "corner" ? 6 * (cw / W) : 0;
-      if (b) { ctx.fillStyle = "#fff"; ctx.fillRect(o[0], o[1], o[2], o[3]); }
-      ctx.save(); ctx.beginPath(); ctx.rect(o[0] + b, o[1] + b, o[2] - 2 * b, o[3] - 2 * b); ctx.clip();
+      let o = px(cr, cw, ch);
+      const shape = layout === "corner" ? v.cam_shape || "frame" : "box";
+      let b = shape === "frame" ? 6 * (cw / W) : 0;
+      ctx.save();
+      if (shape === "circle") {
+        // = design._compose(): a circle the size of the box's short side, with a thin white ring
+        const dd = Math.min(o[2], o[3]);
+        o = [o[0] + (o[2] - dd) / 2, o[1] + (o[3] - dd) / 2, dd, dd];
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(o[0] + dd / 2, o[1] + dd / 2, dd / 2, 0, Math.PI * 2); ctx.fill();
+        b = Math.max(2, dd * 0.025);
+        ctx.beginPath(); ctx.arc(o[0] + dd / 2, o[1] + dd / 2, dd / 2 - b, 0, Math.PI * 2); ctx.clip();
+      } else if (shape === "round") {
+        const r = Math.min(o[2], o[3]) * 0.09;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(o[0], o[1], o[2], o[3], r); else ctx.rect(o[0], o[1], o[2], o[3]);
+        ctx.clip();
+      } else {
+        if (b) { ctx.fillStyle = "#fff"; ctx.fillRect(o[0], o[1], o[2], o[3]); }
+        ctx.beginPath(); ctx.rect(o[0] + b, o[1] + b, o[2] - 2 * b, o[3] - 2 * b); ctx.clip();
+      }
       if (v._fakeCam) drawCamPlaceholder(ctx, o[0] + b, o[1] + b, o[2] - 2 * b, o[3] - 2 * b);
       else { const c = px(v.cam_roi, mw, mh); cover(ctx, media, c[0], c[1], c[2], c[3], o[0] + b, o[1] + b, o[2] - 2 * b, o[3] - 2 * b, 0.5); }
       ctx.restore();
@@ -290,6 +338,11 @@
       const cr = camOutputRect(v);
       parts.cam.hidden = !st.editable || !cr;
       if (cr) place(parts.cam, cr);
+      const er = extraArea(v);
+      parts.extra.hidden = !st.editable || !er;
+      if (er) place(parts.extra, er);
+      // Platform safe zones (preview only): where the app's buttons and text sit on top of a Short.
+      q(".st-safe").hidden = !st.safe || st.d.aspect !== "9:16";
     }
 
     function captionGroup() {
@@ -476,11 +529,13 @@
 
     function getRect(name) {
       const v = view();
+      if (name === "extra") return [...(extraArea(v) || TRIO[2])];
       return name === "game" ? [...gameArea(v)] : [...(camOutputRect(v) || [0.05, 0.05, 0.4, 0.2])];
     }
     function setRect(name, r) {
       const d = st.d;
       if (name === "game") d.game_rect = r.map(r4);
+      else if (name === "extra") d.extra_rect = r.map(r4);
       else d.cam_rect = r.map(r4);
     }
     function textState(name) {
@@ -517,7 +572,7 @@
       const rect = root.getBoundingClientRect();
       const sx = e.clientX, sy = e.clientY;
       const lines = targets(name);
-      const isRect = name === "game" || name === "cam";
+      const isRect = isBox(name);
       const r0 = isRect ? getRect(name) : null;
       const t0 = isRect ? null : textState(name);
       const b0 = isRect ? null : bounds(name);
@@ -584,7 +639,7 @@
       const step = e.shiftKey ? 0.02 : 0.004;
       const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
       const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-      if (name === "game" || name === "cam") {
+      if (isBox(name)) {
         const [x, y, w, h] = getRect(name);
         setRect(name, [clamp(x + dx, 0, 1 - w), clamp(y + dy, 0, 1 - h), w, h]);
       } else {
@@ -603,6 +658,7 @@
       select,
       setDesign(d) { st.d = d; paint(); },
       setMedia(m) { st.media = m; paint(); },
+      setSafe(on) { st.safe = !!on; paint(); },
       setWords(words) { st.words = words || []; },
       setTime(t) { st.time = t; },
       tick(t) { st.time = t; if (st.d) paintCaption(); },
@@ -626,7 +682,7 @@
   }
 
   window.ClipStage = {
-    create, effectiveLayout, gameRegion, gameArea, camOutputRect, chunks, sampleWords, CANVAS,
+    create, effectiveLayout, gameRegion, gameArea, camOutputRect, extraArea, chunks, sampleWords, CANVAS, CAM_LAYOUTS,
     setEmoji(table) { EMOJI = table || EMOJI; },
   };
 })();

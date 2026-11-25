@@ -37,7 +37,8 @@
     const d = { ...base, ...td, caption: { ...base.caption, ...(td.caption || {}) }, title: { ...base.title, ...(td.title || {}) } };
     d.template = t.id;
     d.aspect = KINDS[kind].aspect;
-    d.cam_roi = null; d.game_roi = null; d.credit = "";
+    if (!td.keep_boxes) { d.cam_roi = null; d.game_roi = null; d.extra_roi = null; } // boxes belong to one video
+    d.credit = "";
     return d;
   }
   function pick(kind, t, keepCaptions) {
@@ -223,7 +224,7 @@
           D.formats[kind].dirty = true;
           D.focus = kind;
           if (part === "caption") syncCaptions();
-          if (done) paintToolbar(kind);
+          if (done) { paintToolbar(kind); if (D.framing) D.framing.sync(); }
         },
       });
       st.creditFallback = D.credit || "streamer";
@@ -282,7 +283,7 @@
     if (!box) return;
     const f = D.formats[kind], t = tpl(f.template);
     $$(".fill-seg button", box).forEach((b) => b.classList.toggle("on", b.dataset.fill === f.design.fill));
-    const cl = f.design.layout, cam = cl === "corner" || cl === "stack" ? "move" : f.design.hide_cam ? "hide" : "keep";
+    const cl = f.design.layout, cam = window.ClipStage.CAM_LAYOUTS.includes(cl) ? "move" : f.design.hide_cam ? "hide" : "keep";
     $$(".cam-seg button", box).forEach((b) => b.classList.toggle("on", b.dataset.cam === cam));
     const upd = $('[data-act="update"]', box);
     upd.hidden = !(t && t.mine && f.dirty);
@@ -291,7 +292,8 @@
   }
   function clean(d) {
     const out = clone(d);
-    delete out.cam_roi; delete out.game_roi; delete out.credit;
+    if (!(out.keep_boxes && out.cam_roi)) { delete out.cam_roi; delete out.game_roi; delete out.extra_roi; }
+    delete out.credit;
     if (out.title) delete out.title.text;
     return out;
   }
@@ -367,6 +369,31 @@
     $("#capUpper").checked = !!c.uppercase;
     $("#capEmoji").checked = !!c.emoji;
     $("#capFor").textContent = D.kind === "both" ? "Applies to both videos" : "";
+    syncFraming();
+  }
+
+  /* ---------- "Set it manually" (layouts + boxes) for the focused video type ---------- */
+  function syncFraming() {
+    if (!D.framing && $("#dFraming") && window.ClipFraming) {
+      D.framing = window.ClipFraming.mount($("#dFraming"), {
+        context: "template",
+        get: () => D.formats[D.focus] && D.formats[D.focus].design,
+        changed: () => {
+          const kind = D.focus;
+          D.formats[kind].dirty = true;
+          if (D.stages[kind]) D.stages[kind].setDesign(D.formats[kind].design);
+          paintToolbar(kind);
+        },
+        media: () => D.media,
+        stage: () => D.stages[D.focus],
+        layouts: () => CS().state.layouts || [],
+      });
+    }
+    if (D.framing) {
+      D.framing.sync();
+      const label = $("#dFramingFor");
+      if (label) label.textContent = D.kind === "both" ? `For the ${D.focus === "long" ? "16:9" : "Short"} video. Click the other preview to change that one.` : "";
+    }
   }
   function swatches(id, key) {
     const box = $(id);

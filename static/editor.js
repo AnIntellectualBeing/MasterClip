@@ -8,6 +8,21 @@
 
   const ed = { job: null, index: 0, clip: null, d: null, start: 0, end: 0, title: "", words: [], video: null, raf: 0, playing: false, stage: null };
 
+  let framing = null;
+  function framingPanel() {
+    if (!framing) {
+      framing = window.ClipFraming.mount($("#eFraming"), {
+        context: "clip",
+        get: () => ed.d,
+        changed: () => { stage().setDesign(ed.d); syncControls(); },
+        media: () => ed.video,
+        autoCam: () => (ed.job && ed.job.cam_roi) || null,
+        stage: () => stage(),
+        layouts: () => window.ClipStudio.state.layouts || [],
+      });
+    }
+    return framing;
+  }
   function stage() {
     if (!ed.stage) {
       ed.stage = S().create($("#stageHost"), { resolution: 0.5, onChange: () => syncControls() });
@@ -20,6 +35,7 @@
     const st = stage();
     st.setTime(v.currentTime);
     st.paint();
+    if (framing && framing.open) framing.paintSource();
     $("#timeLabel").textContent = window.ClipStudio.clock(Math.max(0, v.currentTime - ed.start)) + " / " + window.ClipStudio.clock(ed.end - ed.start);
   }
   function loop() {
@@ -69,6 +85,7 @@
     $("#eCreditName").textContent = d.credit ? "@" + d.credit.replace(/^@/, "") : "(no streamer name)";
     const span = ed.end - ed.start;
     $("#trimLabel").textContent = `${window.ClipStudio.clock(ed.start)} → ${window.ClipStudio.clock(ed.end)} · ${span.toFixed(1)} s`;
+    framingPanel().sync();
   }
   function onSeg(id, fn) {
     $$(`#${id} button`).forEach((b) => b.addEventListener("click", () => { fn(b.dataset.v); refresh(); }));
@@ -85,7 +102,8 @@
   swatches("eCapHi", "highlight");
   onSeg("eFill", (v) => { ed.d.fill = v; });
   onSeg("eCamPos", (v) => {
-    ed.d.cam_rect = null; ed.d.game_rect = null; // the buttons put things back in the standard places
+    ed.d.cam_rect = null; ed.d.game_rect = null; ed.d.extra_rect = null; // the buttons put things back in the standard places
+    ed.d.bg_blur = false; ed.d.cam_shape = "frame";
     ed.d.hide_cam = v === "hidden";
     if (v === "hidden" || v === "keep") ed.d.layout = "full";
     else if (v === "corner") ed.d.layout = "corner";
@@ -116,10 +134,11 @@
     const t = window.ClipStudio.state.templates.find((x) => x.id === e.target.value);
     if (!t) return;
     const td = t.design;
-    const keep = { cam_roi: ed.d.cam_roi, game_roi: ed.d.game_roi, credit: ed.d.credit, aspect: ed.d.aspect };
+    const keep = { cam_roi: ed.d.cam_roi, game_roi: ed.d.game_roi, extra_roi: ed.d.extra_roi, credit: ed.d.credit, aspect: ed.d.aspect };
     Object.assign(ed.d, { ...td, caption: { ...ed.d.caption, ...(td.caption || {}) }, title: { ...ed.d.title, ...(td.title || {}) }, template: t.id }, keep);
     if (!td.cam_rect) ed.d.cam_rect = null;
     if (!td.game_rect) ed.d.game_rect = null;
+    if (!td.extra_rect) ed.d.extra_rect = null;
     if (!td.meme_bar) ed.d.meme_bar = 0.24;
     refresh();
   });
@@ -209,6 +228,7 @@
     ed.d = JSON.parse(JSON.stringify(clip.design));
     ed.start = clip.start; ed.end = clip.end; ed.title = clip.title || "";
     $("#editorTitle").textContent = `Edit clip ${index + 1}`;
+    framingPanel().reset();
     const tplSel = $("#eTemplate");
     const kind = ed.d.aspect === "16:9" ? "long" : "short";
     const fits = window.ClipStudio.state.templates.filter((t) => (t.kind || (t.design.aspect === "16:9" ? "long" : "short")) === kind);
@@ -255,14 +275,14 @@
     cancelAnimationFrame(ed.raf);
     if (ed.video) { ed.video.pause(); ed.video.removeAttribute("src"); ed.video.load(); }
     ed.video = null; ed.playing = false; $("#playBtn").textContent = "▶";
-    if (ed.stage) ed.stage.setMedia(null);
+    if (ed.stage) { ed.stage.setMedia(null); ed.stage.setSafe(false); }
     $("#editor").hidden = true;
     document.body.style.overflow = "";
   }
   $("#editorCancel").addEventListener("click", close);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#editor").hidden) { if (!$("#camPicker").hidden) $("#camPicker").hidden = true; else close(); } });
   $("#editorSave").addEventListener("click", async () => {
-    const edit = { start: ed.start, end: ed.end, title: ed.title, design: ed.d };
+    const edit = { start: ed.start, end: ed.end, title: ed.title, design: ed.d, framing_all: !!(framing && framing.allClips) };
     const job = ed.job, index = ed.index;
     close();
     await window.ClipStudio.saveClip(job.id, index, edit);

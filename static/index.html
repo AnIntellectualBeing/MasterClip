@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/crash.js"></script>
   <script src="/static/stage.js" defer></script>
+  <script src="/static/framing.js" defer></script>
   <script src="/static/editor.js" defer></script>
   <script src="/static/designer.js" defer></script>
   <script src="/static/app.js" defer></script>
@@ -196,6 +197,8 @@
         <div class="designer-preview">
           <div id="stages" class="stages"></div>
           <p class="hint center">Lines appear when things line up. Hold <kbd>Alt</kbd> to move freely, or click a part and use the arrow keys.</p>
+          <p class="hint" id="dFramingFor"></p>
+          <div id="dFraming"></div>
         </div>
         <aside class="cap-panel" aria-labelledby="capTitle">
           <div class="cap-head"><h2 id="capTitle">Captions</h2><span id="capFor" class="muted"></span></div>
@@ -438,6 +441,7 @@
             </div>
             <label class="field" id="eSplitField"><span>Cam size <b id="eSplitVal"></b></span><input id="eSplit" type="range" min="0.2" max="0.7" step="0.01"></label>
             <label class="field" id="eFocusField"><span>Gameplay left ↔ right</span><input id="eFocus" type="range" min="0" max="1" step="0.01"></label>
+            <div id="eFraming"></div>
           </div>
           <div class="etab" id="etab-captions" hidden>
             <div class="field"><span>Style</span>

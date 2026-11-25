@@ -965,6 +965,7 @@ $("#wbHide").addEventListener("click", () => { $("#welcomeBack").hidden = true; 
     const data = await api("/api/templates");
     state.templates = data.templates;
     state.fonts = data.fonts;
+    state.layouts = data.layouts || [];
     window.ClipDesigner.init(data);
   } catch (err) {
     notice("MasterClip is still starting. Refresh in a few seconds.");
