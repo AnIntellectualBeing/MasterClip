@@ -155,6 +155,13 @@ def emoji_overlays(design: Design, segments, duration: float):
     return out
 
 
+def caption_animation(cap: CaptionStyle) -> str:
+    """The animation a caption really uses ("auto" = what each style always did)."""
+    if cap.animation != "auto":
+        return cap.animation
+    return {"pop": "pop_auto", "karaoke": "highlight"}.get(cap.style, "full_line")
+
+
 def _style_line(name, font, size, primary, secondary, outline_color, back, bold, border_style, outline, shadow):
     return (
         f"Style: {name},{font},{size},{primary},{secondary},{outline_color},{back},"
@@ -357,37 +364,60 @@ def build_ass(design: Design, segments, duration: float, title_text: str | None 
                     events.append(f"Dialogue: 0,{a_s},{a_e},Caption,,0,0,0,,{{\\an5\\pos({cx},{cy})\\q2{soft_sh}{size}}}{text_upto(n, True)}")
                     events.append(f"Dialogue: 1,{a_s},{a_e},Caption,,0,0,0,,{{\\an5\\pos({cx},{cy})\\q2{hard}{size}}}{text_upto(n, False)}")
                 continue
-            if cap.style in ("classic", "boxed", "twoline"):
-                line, wrap = rich(" ".join(texts), cap.font), ""
-                if cap.style == "twoline" and len(texts) > 2:
-                    cut = _balanced_cut(texts)
-                    line = rich(" ".join(texts[:cut]), cap.font) + r"\N" + rich(" ".join(texts[cut:]), cap.font)
-                    wrap = "\\q2" + scaled(fit(" ".join(texts[:cut]), " ".join(texts[cut:])))  # we broke the lines
+            anim = caption_animation(cap)
+            cut = _balanced_cut(texts) if cap.style == "twoline" and len(texts) > 2 else None
+            lines_text = [" ".join(texts)] if cut is None else [" ".join(texts[:cut]), " ".join(texts[cut:])]
+            share = fit(*lines_text)
+            lead = "" if cut is None else "\\q2"  # we broke the lines ourselves
+
+            def join(pieces):
+                if cut is None:
+                    return " ".join(pieces)
+                return " ".join(pieces[:cut]) + r"\N" + " ".join(pieces[cut:])
+
+            def popped(s):
+                a, b, c = (round(v * s) for v in (70, 108, 100))
+                return f"\\fscx{a}\\fscy{a}\\t(0,90,\\fscx{b}\\fscy{b})\\t(90,160,\\fscx{c}\\fscy{c})"
+
+            if anim in ("full_line", "pop_line"):
+                head = popped(share) if anim == "pop_line" else scaled(share)
                 events.append(
                     f"Dialogue: 1,{start_t},{end_t},Caption,,0,0,0,,"
-                    f"{{\\an5\\pos({cx},{cy}){wrap}}}{line}"
+                    f"{{\\an5\\pos({cx},{cy}){lead}{head}}}{join([rich(t, cap.font) for t in texts])}"
                 )
                 continue
-            share = fit(" ".join(texts))
-            hi = ass_color(cap.highlight)
+            hi, base = ass_color(cap.highlight), ass_color(cap.color)
+            size_now = round(share * 100)
             for i, word in enumerate(group):
                 start = word["start"]
                 end = group[i + 1]["start"] if i + 1 < len(group) else group_end
                 if end <= start:
                     continue
+                if anim == "one_by_one":
+                    alone = fit(texts[i])
+                    events.append(
+                        f"Dialogue: 1,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,,"
+                        f"{{\\an5\\pos({cx},{cy}){popped(alone)}\\c{hi}}}{rich(texts[i], cap.font)}"
+                    )
+                    continue
                 pieces = []
                 for j, text in enumerate(texts):
                     piece = rich(text, cap.font)
                     if j == i:
-                        piece = f"{{\\c{hi}}}{piece}{{\\r}}"
+                        if anim == "pop_word":
+                            a, b = round(size_now * 0.75), round(size_now * 1.18)
+                            piece = (f"{{\\c{hi}\\fscx{a}\\fscy{a}\\t(0,80,\\fscx{b}\\fscy{b})"
+                                     f"\\t(80,150,\\fscx{size_now}\\fscy{size_now})}}{piece}"
+                                     f"{{\\c{base}\\fscx{size_now}\\fscy{size_now}}}")
+                        else:
+                            piece = f"{{\\c{hi}}}{piece}{{\\c{base}}}"
+                    elif j > i and anim == "build_up":
+                        piece = f"{{\\alpha&HFF&}}{piece}{{\\alpha&H00&}}"  # laid out, not shown yet
                     pieces.append(piece)
-                pop = scaled(share)
-                if cap.style == "pop" and i == 0:
-                    a, b, c = (round(v * share) for v in (70, 108, 100))
-                    pop = f"\\fscx{a}\\fscy{a}\\t(0,90,\\fscx{b}\\fscy{b})\\t(90,160,\\fscx{c}\\fscy{c})"
+                head = popped(share) if anim == "pop_auto" and i == 0 else scaled(share)
                 events.append(
                     f"Dialogue: 1,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,,"
-                    f"{{\\an5\\pos({cx},{cy}){pop}}}{' '.join(pieces)}"
+                    f"{{\\an5\\pos({cx},{cy}){lead}{head}}}{join(pieces)}"
                 )
     # Shout words: big, yellow, punched in with a little tilt.
     sy = cy if cap.style != "none" else round(0.45 * H)

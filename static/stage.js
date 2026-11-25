@@ -109,6 +109,11 @@
     });
     return best;
   }
+  // Mirror of styles.caption_animation(): "auto" = what each style always did.
+  function animationOf(c) {
+    if (c.animation && c.animation !== "auto") return c.animation;
+    return c.style === "pop" ? "pop_auto" : c.style === "karaoke" ? "highlight" : "full_line";
+  }
   const SHOUT_WORDS = [12, 13]; // "no way" in the sample words
   const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 
@@ -394,19 +399,26 @@
         const word = (t, colour) => { n += 1; return `<span style="color:${colour};${n > shownUpTo ? "opacity:0" : ""}">${esc(t)}</span>`; };
         html = lines[0].map((t, i) => word(t, i === key ? c.highlight : c.color)).join(" ");
         if (lines.length === 2) html += "<br>" + lines[1].map((t) => word(t, c.second)).join(" ");
-      } else if (c.style === "pop" || c.style === "karaoke") {
-        html = texts.map((t, i) => {
-          const w = group[i];
-          const on = !placeholder && st.time >= w.start && (i + 1 < group.length ? st.time < group[i + 1].start : true);
-          return on ? `<span style="color:${c.highlight}">${esc(t)}</span>` : esc(t);
-        }).join(" ");
-      } else if (c.style === "twoline" && texts.length > 2) {
-        const cut = balancedCut(texts);
-        html = esc(texts.slice(0, cut).join(" ")) + "<br>" + esc(texts.slice(cut).join(" "));
-      } else html = esc(texts.join(" "));
-      const key = html + "|" + c.style;
+      } else {
+        // Mirror of styles.caption_animation() + the per-word captions in build_ass().
+        const anim = animationOf(c);
+        const active = placeholder ? (anim === "one_by_one" ? 0 : -1)
+          : group.reduce((acc, w, i) => (st.time >= w.start ? i : acc), -1);
+        const cut = c.style === "twoline" && texts.length > 2 ? balancedCut(texts) : -1;
+        const pieces = texts.map((t, i) => {
+          if (anim === "one_by_one") return i === active ? `<span class="wpop" style="color:${c.highlight}">${esc(t)}</span>` : null;
+          if (anim === "full_line" || anim === "pop_line") return esc(t);
+          if (i === active) return `<span${anim === "pop_word" ? ' class="wpop"' : ""} style="color:${c.highlight}">${esc(t)}</span>`;
+          if (anim === "build_up" && i > active && !placeholder) return `<span style="opacity:0">${esc(t)}</span>`;
+          return esc(t);
+        });
+        if (anim === "one_by_one") html = pieces.filter(Boolean).join("");
+        else html = cut > 0 ? pieces.slice(0, cut).join(" ") + "<br>" + pieces.slice(cut).join(" ") : pieces.join(" ");
+      }
+      const key = html + "|" + c.style + "|" + (c.animation || "auto");
       if (box.dataset.key !== key) {
-        const fresh = !placeholder && c.style === "pop" && box.dataset.first !== String(group[0].start);
+        const anim = animationOf(c);
+        const fresh = !placeholder && (anim === "pop_auto" || anim === "pop_line") && box.dataset.first !== String(group[0].start);
         box.dataset.first = String(group[0].start);
         box.dataset.key = key;
         box.querySelector(".st-words")?.remove();

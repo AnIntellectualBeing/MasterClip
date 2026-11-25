@@ -239,7 +239,7 @@ def chat_signal(chat, n) -> np.ndarray:
     return np.clip(0.45 * burst + 0.4 * laughs + 0.15 * clipped, 0, 1)
 
 
-def timeline(duration, transcript, rms=None, peak=None, motion2=None, heat=None, chat=None) -> Timeline:
+def timeline(duration, transcript, rms=None, peak=None, motion2=None, heat=None, chat=None, weights=None) -> Timeline:
     """Score every second. rms/peak: one value per second; motion2: one per 2 s; heat: 0..1 per second;
     chat: [(seconds, message)] chat replay, when the link had one."""
     n = max(1, int(math.ceil(float(duration))))
@@ -298,7 +298,7 @@ def timeline(duration, transcript, rms=None, peak=None, motion2=None, heat=None,
 
     chat_a = chat_signal(chat, n)
     parts = {"event": event, "talk": talk, "jump": jump, "loud": loud, "peaks": peaks, "scene": scene, "heat": heat_a, "chat": chat_a}
-    weights = dict(WEIGHTS)
+    weights = dict(weights or WEIGHTS)  # Moment mix / learned taste (taste.py) may change them
     if not chat_a.any():
         weights.pop("chat")
     if not has_heat:
@@ -340,10 +340,10 @@ class Moment:
     reasons: list
 
 
-def find_moments(duration, transcript, rms=None, peak=None, motion2=None, heat=None, chat=None, limit=None, spacing=14) -> tuple[list[Moment], Timeline]:
+def find_moments(duration, transcript, rms=None, peak=None, motion2=None, heat=None, chat=None, limit=None, spacing=14, weights=None) -> tuple[list[Moment], Timeline]:
     """The strongest peaks, best first. The core is the event itself; setup and reaction get
     added when the clip is shaped."""
-    tl = timeline(duration, transcript, rms, peak, motion2, heat, chat)
+    tl = timeline(duration, transcript, rms, peak, motion2, heat, chat, weights)
     limit = limit or max(60, int(float(duration) / 20))  # long streams need more for the 16:9 compilation
     score = tl.score.copy()
     n = len(score)

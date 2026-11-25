@@ -504,7 +504,9 @@ kbd { font: 700 12px/1 "Segoe UI", system-ui, sans-serif; background: #fff; bord
 .st-words { display: inline-block; }
 .st-words.pop { animation: stpop .16s ease-out; }
 @keyframes stpop { 0% { transform: scale(.7); } 56% { transform: scale(1.08); } 100% { transform: scale(1); } }
-@media (prefers-reduced-motion: reduce) { .st-words.pop { animation: none; } }
+.st-words .wpop { display: inline-block; animation: stwpop .15s ease-out; }
+@keyframes stwpop { 0% { transform: scale(.75); } 53% { transform: scale(1.18); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .st-words.pop, .st-words .wpop { animation: none; } }
 
 /* captions panel */
 .cap-panel { background: #FFFCF8; border: 1px solid var(--line); border-radius: 22px; padding: 16px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
@@ -734,3 +736,40 @@ kbd { font: 700 12px/1 "Segoe UI", system-ui, sans-serif; background: #fff; bord
 .fr > summary::before { content: ""; width: 8px; height: 8px; border: solid var(--brand); border-width: 0 2.5px 2.5px 0; transform: rotate(-45deg); flex: none; margin: 0 4px; }
 .fr[open] > summary::before { transform: rotate(45deg); }
 .fr-src { max-width: 640px; }
+/* ---- 1.6 editing: words tab, stars, transcript explorer, chatbot helper ---- */
+.words-tools { flex-wrap: wrap; margin: 6px 0 10px; }
+.words-list { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+.word-row { border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.word-row .word-text { width: 100%; font-size: 15px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.word-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.word-ctrl .num { width: 70px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; }
+.ghost.tiny { padding: 3px 8px; font-size: 12px; border-radius: 8px; }
+.words-files { margin-top: 12px; }
+.words-files summary, .ch-adv summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; }
+.file-btn { cursor: pointer; display: inline-flex; align-items: center; }
+.pc-font { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.pc-font select { max-width: 100%; }
+.my-style { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px 4px 12px; }
+.my-style button { background: none; border: 0; font: inherit; color: inherit; cursor: pointer; padding: 2px; }
+.my-style .x { opacity: .55; font-size: 12px; }
+.stars { display: flex; gap: 2px; margin: 4px 0; }
+.stars .star { background: none; border: 0; font-size: 22px; line-height: 1; color: #c9ccd3; cursor: pointer; padding: 0 1px; }
+.stars .star.on { color: #f5b400; }
+.stars .star:hover { transform: scale(1.12); }
+.taste-line { margin: 6px 0 12px; }
+.explore-shell { max-width: 760px; }
+.explore-body { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.explore-body input[type=search], .explore-body textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.tr-text { max-height: 50vh; overflow-y: auto; line-height: 1.9; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.tr-word { cursor: pointer; border-radius: 4px; }
+.tr-word:hover { background: var(--soft); }
+.tr-word.tr-hit { background: #fff1a8; }
+.tr-word.tr-on { background: var(--brand-soft); color: var(--brand-dark); }
+.tr-stamp { display: inline-block; font-size: 12px; color: var(--muted, #888); margin: 0 6px 0 2px; font-variant-numeric: tabular-nums; }
+.tr-foot { flex-wrap: wrap; gap: 8px; }
+.ch-steps { margin: 0; padding-left: 20px; line-height: 1.6; }
+.ch-parts { display: flex; flex-direction: column; gap: 6px; max-height: 26vh; overflow-y: auto; }
+.ch-part { display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.ch-part.ch-copied { background: var(--soft); }
+.ch-moments { display: flex; flex-direction: column; gap: 4px; }
+.ch-moment { display: flex; gap: 6px; align-items: center; }

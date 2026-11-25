@@ -470,8 +470,24 @@ function recipePayload() {
   return { ...window.ClipDesigner.payload(), length: state.recipe.length, count: state.recipe.count, auto_post: state.autoPost === true,
     posting_slot: window.ClipPosting ? window.ClipPosting.sessionSlot() : 0,
     campaign_id: state.campaign ? state.campaign.id : null,
+    mix: state.mix || "balanced",
     resolution: state.source && state.source.info && state.source.info.is_live ? 1080 : Number($("#exportQuality").value) };
 }
+// Moment mix: which moments the picker prefers.
+const MIX_HINTS = {
+  balanced: "A bit of everything: big events, loud reactions and funny talk.",
+  action: "Chases, crashes, loud reactions and big things on screen come first.",
+  dialogue: "Funny back-and-forth and jokes come first.",
+};
+function setMix(mix) {
+  if (!MIX_HINTS[mix]) mix = "balanced";
+  state.mix = mix;
+  $$("#mixSeg button").forEach((b) => b.classList.toggle("on", b.dataset.v === mix));
+  $("#mixHint").textContent = MIX_HINTS[mix];
+  try { localStorage.setItem("clipstudio.mix", mix); } catch { /* private mode */ }
+}
+$$("#mixSeg button").forEach((b) => b.addEventListener("click", () => setMix(b.dataset.v)));
+try { setMix(localStorage.getItem("clipstudio.mix") || "balanced"); } catch { setMix("balanced"); }
 // First screen: auto-post every clip, or pick by hand.
 function setPostMode(mode) {
   state.autoPost = mode === "auto";
@@ -755,6 +771,7 @@ function showLive(job) {
   $("#makeBox").hidden = true;
   $("#liveBar").hidden = false;
   $("#startOver").hidden = true;
+  $("#openTranscript").hidden = $("#openChatHelp").hidden = true; // new clips after Stop
   const stopping = ["stopping", "finishing"].includes(live.state);
   $("#liveTitle").textContent = stopping ? "Finishing up…" : live.state === "starting" ? "Connecting to the stream…" : "Recording live";
   const n = (job.clips || []).length;
@@ -806,6 +823,7 @@ function showClips(job) {
   $("#restyleBox").hidden = true;
   $("#liveBar").hidden = true;
   $("#startOver").hidden = false;
+  $("#openTranscript").hidden = $("#openChatHelp").hidden = false;
   state.painted = `${job.id}:${job.clips.length}:done`;
   if (window.ClipLong) window.ClipLong.paint(job);
   $("#aiNote").textContent = job.ai_note || "";
@@ -841,6 +859,7 @@ function paintCards(job) {
     card.append(video, el("div", { class: "clip-body" },
       title,
       el("span", { class: "muted", style: "font-size:13px", text: `${mixed ? (shape === "16:9" ? "🖥 YouTube 16:9 · " : "📱 Short 9:16 · ") : ""}${clock(clip.end - clip.start)} long` }),
+      live ? "" : stars(job, clip),
       el("div", { class: "clip-posting", "aria-live": "polite" }),
       el("div", { class: "clip-actions" },
         el("button", { class: "ghost small", type: "button", text: "✏️ Edit", disabled: live, title: live ? "You can edit after you press Stop" : "", onclick: () => window.ClipEditor.open(job, clip.index) }),
@@ -849,6 +868,34 @@ function paintCards(job) {
     return card;
   }));
   if (window.ClipPosting) window.ClipPosting.paintOutput();
+  if (!live) paintTaste();
+}
+// 1-5 stars on each clip: saved on this PC; after 8 rated moments the picker leans to what you like.
+function stars(job, clip) {
+  const box = el("div", { class: "stars", role: "radiogroup", "aria-label": "Rate this clip" });
+  const paint = (n) => [...box.children].forEach((b, i) => { b.classList.toggle("on", i < n); b.setAttribute("aria-checked", String(i + 1 === n)); });
+  for (let n = 1; n <= 5; n++) {
+    box.append(el("button", { type: "button", role: "radio", class: "star", text: "★", title: `${n} star${n > 1 ? "s" : ""}`, "aria-label": `${n} star${n > 1 ? "s" : ""}`,
+      onclick: async () => {
+        paint(n);
+        try {
+          const r = await api(`/api/jobs/${job.id}/clips/${clip.index}/rating`, { method: "POST", body: { stars: n } });
+          clip.rating = n;
+          paintTaste(r.taste);
+        } catch (err) { notice(err.message); }
+      } }));
+  }
+  paint(clip.rating || 0);
+  return box;
+}
+async function paintTaste(info) {
+  const line = $("#tasteLine");
+  if (!line) return;
+  if (!info) { try { info = await api("/api/taste"); } catch { return; } }
+  line.hidden = false;
+  line.textContent = info.active
+    ? `⭐ MasterClip learns what you like (${info.rated} clips rated). ${info.notes.join(" ")}`
+    : `⭐ Rate your clips: MasterClip learns what you like. ${info.rated} of ${info.needed} rated so far, then new videos lean to what you rate high.`;
 }
 async function saveClip(jobId, index, edit) {
   state.phased = false;
@@ -966,6 +1013,8 @@ $("#wbHide").addEventListener("click", () => { $("#welcomeBack").hidden = true; 
     state.templates = data.templates;
     state.fonts = data.fonts;
     state.layouts = data.layouts || [];
+    state.pcFonts = data.pc_fonts || [];
+    state.captionStyles = data.caption_styles || [];
     window.ClipDesigner.init(data);
   } catch (err) {
     notice("MasterClip is still starting. Refresh in a few seconds.");

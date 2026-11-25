@@ -16,6 +16,7 @@
   <script src="/static/posting.js" defer></script>
   <script src="/static/campaigns.js" defer></script>
   <script src="/static/longvideo.js" defer></script>
+  <script src="/static/explore.js" defer></script>
   <script src="/static/aiboost.js" defer></script>
   <script src="/static/licence.js" defer></script>
 </head>
@@ -215,6 +216,9 @@
             <div class="field" id="capWordsRow"><span>Words at a time</span>
               <div class="stepper-num"><button type="button" id="capWordsMinus" aria-label="Fewer words">−</button><span id="capWords">2</span><button type="button" id="capWordsPlus" aria-label="More words">+</button></div>
             </div>
+            <div class="field" id="capAnimRow"><span>How words move</span>
+              <div class="seg wrap" id="capAnim"><button type="button" data-v="auto" title="What this style always does">Normal</button><button type="button" data-v="highlight" title="The word being said lights up">Light up word</button><button type="button" data-v="pop_word" title="The word being said lights up and pops">Pop each word</button><button type="button" data-v="pop_line" title="The whole line pops in">Pop the line</button><button type="button" data-v="one_by_one" title="Only the word being said is shown">One word at a time</button><button type="button" data-v="build_up" title="Words appear as they are said">Build up</button><button type="button" data-v="full_line" title="The line just sits there">Still line</button></div>
+            </div>
             <div class="field"><span>Font</span><div id="capFonts" class="font-grid"></div></div>
             <label class="field"><span>Size <b id="capSizeVal"></b></span><input id="capSize" type="range" min="24" max="160" step="1"></label>
             <div class="field"><span>Colour</span><div class="swatches" id="capColor"></div></div>
@@ -271,6 +275,11 @@
         <div class="setting" id="clipCountSetting">
           <span class="setting-label">How many clips</span>
           <div class="stepper-num"><button type="button" id="countMinus" aria-label="Fewer">−</button><span id="countValue">3</span><button type="button" id="countPlus" aria-label="More">+</button></div>
+        </div>
+        <div class="setting" id="mixSetting">
+          <span class="setting-label">Moment mix</span>
+          <div class="seg" id="mixSeg"><button type="button" data-v="balanced" class="on">Balanced</button><button type="button" data-v="action">Action</button><button type="button" data-v="dialogue">Talking</button></div>
+          <small class="muted" id="mixHint">A bit of everything: big events, loud reactions and funny talk.</small>
         </div>
         <p id="continuousNote" class="hint" hidden>Non-stop mode: clips keep coming as good moments are found. No total clip count, and no need to press Clip now.</p>
         <div class="setting ai-setting">
@@ -355,11 +364,14 @@
           <div class="row-gap">
             <button id="postAll" class="primary" type="button">📤 Post / schedule all</button>
             <button id="changeDesign" class="ghost" type="button" title="Go back, change the look, then come back and apply it">🎨 Change design</button>
+            <button id="openTranscript" class="ghost" type="button" title="Read everything that was said and clip any part of it">📜 Transcript</button>
+            <button id="openChatHelp" class="ghost" type="button" title="Let a free chatbot (ChatGPT, Gemini...) find moments in a long video">🤖 Free chatbot helper</button>
             <button id="saveAll" class="ghost" type="button">💾 Save all to my Videos</button>
             <button id="startOver" class="ghost" type="button">Start a new video</button>
           </div>
         </div>
         <p id="aiNote" class="ai-note" hidden></p>
+        <p id="tasteLine" class="hint taste-line" hidden></p>
         <section id="postOverview" class="post-overview" aria-label="Automatic posting status" hidden>
           <div class="row-between"><strong>Posting status</strong><button id="outputPosting" class="ghost small" type="button">Accounts &amp; posting speed</button></div>
           <div id="platformStatus" class="platform-status" aria-live="polite"></div>
@@ -403,6 +415,7 @@
       <header class="editor-top">
         <strong id="editorTitle">Edit clip</strong>
         <div class="row-gap">
+          <label class="switch" title="The look (layout, captions, title style) goes on every other clip of this video too. Each clip keeps its own moment and title."><input id="eApplyAll" type="checkbox"><span></span> Use this look on all clips</label>
           <button id="editorCancel" class="ghost" type="button">Cancel</button>
           <button id="editorSave" class="primary" type="button">Save changes</button>
         </div>
@@ -427,6 +440,7 @@
           <div class="tabs small" role="tablist">
             <button class="tab active" data-etab="layout" type="button">Layout</button>
             <button class="tab" data-etab="captions" type="button">Captions</button>
+            <button class="tab" data-etab="words" type="button">Words</button>
             <button class="tab" data-etab="title" type="button">Title</button>
           </div>
           <div class="etab" id="etab-layout">
@@ -447,11 +461,27 @@
             <div class="field"><span>Style</span>
               <div class="seg wrap" id="eCapStyle"><button data-v="pop" type="button">Pop</button><button data-v="karaoke" type="button">Karaoke</button><button data-v="twoline" type="button">2-line</button><button data-v="classic" type="button">Classic</button><button data-v="boxed" type="button">Boxed</button><button data-v="none" type="button">None</button></div>
             </div>
-            <div class="field"><span>Font</span><div id="eFonts" class="font-list"></div></div>
+            <div class="field" id="eAnimField"><span>How words move</span>
+              <div class="seg wrap" id="eAnim"><button data-v="auto" type="button" title="What this style always does">Normal</button><button data-v="highlight" type="button" title="The word being said lights up">Light up word</button><button data-v="pop_word" type="button" title="The word being said lights up and pops">Pop each word</button><button data-v="pop_line" type="button" title="The whole line pops in">Pop the line</button><button data-v="one_by_one" type="button" title="Only the word being said is shown">One word at a time</button><button data-v="build_up" type="button" title="Words appear as they are said">Build up</button><button data-v="full_line" type="button" title="The line just sits there">Still line</button></div>
+              <p class="hint" id="eAnimHint">Bold + red word and Two colours always build up word by word.</p>
+            </div>
+            <div class="field" id="eWordsRow"><span>Words at a time</span>
+              <div class="stepper-num"><button type="button" id="eWordsMinus" aria-label="Fewer words">−</button><span id="eWords">2</span><button type="button" id="eWordsPlus" aria-label="More words">+</button></div>
+            </div>
+            <div class="field"><span>Font</span><div id="eFonts" class="font-list"></div>
+              <label class="pc-font"><small class="muted">More fonts on this PC</small><select id="ePcFont"><option value="">Pick a font…</option></select></label>
+            </div>
             <label class="field"><span>Size <b id="eCapSizeVal"></b></span><input id="eCapSize" type="range" min="24" max="160" step="1"></label>
             <div class="field"><span>Colour</span><div class="swatches" id="eCapColor"></div></div>
             <div class="field"><span>Highlight</span><div class="swatches" id="eCapHi"></div></div>
             <label class="field"><span>Outline <b id="eOutlineVal"></b></span><input id="eOutline" type="range" min="0" max="16" step="1"></label>
+            <div class="field"><span>Outline colour</span><div class="swatches" id="eCapEdge"></div></div>
+            <div class="field"><span>My caption styles</span>
+              <div class="chips small" id="eMyStyles"></div>
+              <button id="eSaveStyle" class="ghost small" type="button">💾 Save as my caption style</button>
+              <div id="eStyleNameRow" class="row-gap" hidden><input id="eStyleName" type="text" maxlength="40" placeholder="Name, e.g. Yellow pop" aria-label="Caption style name"><button id="eStyleNameOk" class="primary small" type="button">Save</button></div>
+              <p class="hint">Keeps the font, colours, size and movement so you can use them on any clip.</p>
+            </div>
             <div class="field"><span>Position</span>
               <div class="seg" id="eCapPos"><button data-v="0.18" type="button">Top</button><button data-v="0.5" type="button">Middle</button><button data-v="0.78" type="button">Bottom</button></div>
               <p class="hint">Or drag the caption on the preview.</p>
@@ -459,15 +489,40 @@
             <label class="switch"><input id="eUpper" type="checkbox"><span></span> UPPERCASE</label>
             <label class="switch"><input id="eEmoji" type="checkbox"><span></span> Emoji 😂</label>
           </div>
+          <div class="etab" id="etab-words" hidden>
+            <p class="hint">Fix what the captions say. Click a line to jump there. Changes show on the preview and go on the clip when you save.</p>
+            <div class="row-gap words-tools">
+              <span class="muted">Move all:</span>
+              <button id="wEarlier" class="ghost small" type="button" title="Captions come 0.1 s earlier">◀ 0.1 s earlier</button>
+              <button id="wLater" class="ghost small" type="button" title="Captions come 0.1 s later">0.1 s later ▶</button>
+            </div>
+            <div id="wList" class="words-list" aria-label="Caption lines"></div>
+            <p id="wEmpty" class="hint" hidden>No captions in this part of the video. Import a caption file below.</p>
+            <details class="words-files">
+              <summary>Caption files (SRT, VTT, ASS)</summary>
+              <label class="field"><span>Times in my file start at</span>
+                <select id="wScope"><option value="clip">the start of this clip</option><option value="video">the start of the whole video</option></select></label>
+              <div class="row-gap">
+                <label class="ghost small file-btn">📂 Import a caption file<input id="wImport" type="file" accept=".srt,.vtt,.ass,.ssa,.json" hidden></label>
+                <a id="wExportSrt" class="ghost small" href="#" download>⬇ SRT</a>
+                <a id="wExportVtt" class="ghost small" href="#" download>⬇ VTT</a>
+              </div>
+              <p class="hint">Downloads hold this clip's captions, timed from the start of the clip. Save your changes first.</p>
+            </details>
+          </div>
           <div class="etab" id="etab-title" hidden>
             <label class="field"><span>Title on the clip</span><input id="eTitle" type="text" maxlength="140" placeholder="e.g. Speed finally finishes GTA"></label>
             <div class="chips small" id="eSuggest"></div>
+            <button id="eImprove" class="ghost small" type="button">✨ Improve heading</button>
+            <p class="hint" id="eImproveNote">Gives you hook questions built from what is said in this clip.</p>
+            <div class="chips small" id="eIdeas"></div>
             <div class="field"><span>Title style</span>
               <div class="seg wrap" id="eTitleStyle"><button data-v="white_box" type="button">White box</button><button data-v="red_box" type="button">Red box</button><button data-v="yellow" type="button">Yellow</button><button data-v="outline" type="button">Outline</button><button data-v="meme" type="button">Meme</button></div>
             </div>
             <label class="field"><span>Size <b id="eTitleSizeVal"></b></span><input id="eTitleSize" type="range" min="36" max="140" step="1"></label>
             <div class="field"><span>Show it</span>
-              <div class="seg" id="eTitleTime"><button data-v="3" type="button">First 3 s</button><button data-v="6" type="button">First 6 s</button><button data-v="0" type="button">Whole clip</button></div>
+              <label class="switch"><input id="eTitleWhole" type="checkbox"><span></span> The whole clip</label>
+              <label class="field" id="eTitleSecsField"><span>For the first <b id="eTitleSecsVal"></b> s</span><input id="eTitleSecs" type="range" min="2" max="60" step="1"></label>
             </div>
             <label class="switch"><input id="eTitleShow" type="checkbox"><span></span> Show the title</label>
             <label class="switch"><input id="eCredit" type="checkbox"><span></span> Show credit <b id="eCreditName"></b></label>
@@ -480,6 +535,52 @@
         <strong>Drag a box over the streamer's face cam</strong>
         <div class="cam-picker-stage"><canvas id="camCanvas"></canvas><div id="camDraw" class="drag-box draw"></div></div>
         <div class="row-end row-gap"><button id="camCancel" class="ghost" type="button">Cancel</button><button id="camDone" class="primary" type="button">Use this box</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSCRIPT EXPLORER -->
+  <div id="transcriptDlg" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="trTitle">
+    <div class="editor-shell sched-shell explore-shell">
+      <header class="editor-top">
+        <strong id="trTitle">Transcript</strong>
+        <button id="trClose" class="ghost" type="button" aria-label="Close">✕</button>
+      </header>
+      <div class="explore-body">
+        <p class="hint">Click the first word of the part you want, then the last word. Then press Make a clip.</p>
+        <input id="trSearch" type="search" placeholder="Search what was said…" aria-label="Search the transcript">
+        <small id="trFound" class="muted"></small>
+        <div id="trText" class="tr-text" tabindex="0"></div>
+        <div class="row-between tr-foot">
+          <span id="trPick" class="muted">Nothing picked yet.</span>
+          <div class="row-gap"><button id="trClear" class="ghost small" type="button">Clear</button><button id="trMake" class="primary" type="button" disabled>✂ Make a clip of this part</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FREE CHATBOT HELPER -->
+  <div id="chatHelpDlg" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="chTitle">
+    <div class="editor-shell sched-shell explore-shell">
+      <header class="editor-top">
+        <strong id="chTitle">Free chatbot helper</strong>
+        <button id="chClose" class="ghost" type="button" aria-label="Close">✕</button>
+      </header>
+      <div class="explore-body">
+        <ol class="ch-steps">
+          <li>Copy a part and paste it into any free chatbot (ChatGPT, Gemini, Copilot, Claude).</li>
+          <li>Copy what the chatbot answers and paste it in the box below. Do this for each part you like.</li>
+          <li>Tick the moments you want and press Make clips.</li>
+        </ol>
+        <details class="ch-adv"><summary>Advanced</summary>
+          <label class="field"><span>Minutes in each part</span><select id="chMinutes"><option value="15">15</option><option value="25" selected>25</option><option value="40">40</option></select></label>
+        </details>
+        <div id="chParts" class="ch-parts"></div>
+        <label class="field"><span>Paste the chatbot's answers here</span>
+          <textarea id="chAnswer" rows="5" placeholder="12:30-13:05 He crashes the police car&#10;1:02:10-1:02:40 Cops show up at the party"></textarea></label>
+        <button id="chRead" class="ghost small" type="button">Read the answers</button>
+        <div id="chMoments" class="ch-moments"></div>
+        <div class="row-end"><button id="chMake" class="primary" type="button" disabled>✂ Make clips of the ticked ones</button></div>
       </div>
     </div>
   </div>

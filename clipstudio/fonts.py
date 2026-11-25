@@ -108,10 +108,76 @@ def _load(path: str) -> _Font | None:
         return None
 
 
+def _family_name(path: Path) -> tuple[str, str] | None:
+    """(family, subfamily) from a .ttf/.otf name table, reading only the bytes needed."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(12)
+            if len(head) < 12 or head[:4] == b"ttcf":
+                return None
+            count = struct.unpack(">H", head[4:6])[0]
+            directory = fh.read(16 * count)
+            name_at = None
+            for i in range(count):
+                tag, _, start, length = struct.unpack(">4sIII", directory[16 * i: 16 * i + 16])
+                if tag == b"name":
+                    name_at = (start, length)
+            if not name_at:
+                return None
+            fh.seek(name_at[0])
+            table = fh.read(min(name_at[1], 200_000))
+        records, strings = struct.unpack(">H", table[2:4])[0], struct.unpack(">H", table[4:6])[0]
+        found: dict[int, str] = {}
+        for i in range(records):
+            platform, encoding, language, name_id, length, offset = struct.unpack(
+                ">HHHHHH", table[6 + 12 * i: 18 + 12 * i])
+            if name_id not in (1, 2) or name_id in found:
+                continue
+            raw = table[strings + offset: strings + offset + length]
+            if platform == 3 and language in (0x409, 0):
+                found[name_id] = raw.decode("utf-16-be", "ignore")
+            elif platform == 1 and language == 0:
+                found.setdefault(name_id, raw.decode("latin-1", "ignore"))
+        family = (found.get(1) or "").strip()
+        return (family, (found.get(2) or "").strip()) if family else None
+    except (OSError, struct.error, IndexError):
+        return None
+
+
+@lru_cache(maxsize=1)
+def installed_fonts() -> dict[str, Path]:
+    """{family: file} for the fonts installed on this PC (Windows + the user's own fonts folder).
+    Picks the Regular file of each family; font collections (.ttc) are skipped."""
+    folders = [WINDOWS_FONTS]
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        folders.append(Path(local) / "Microsoft" / "Windows" / "Fonts")
+    out: dict[str, tuple[Path, bool]] = {}
+    for folder in folders:
+        try:
+            files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".ttf", ".otf"))
+        except OSError:
+            continue
+        for path in files:
+            named = _family_name(path)
+            if not named:
+                continue
+            family, sub = named
+            if family in FONTS or family.startswith(".") or len(family) > 60:
+                continue
+            regular = sub.lower() in ("regular", "normal", "book", "roman")
+            if family not in out or (regular and not out[family][1]):
+                out[family] = (path, regular)
+    return {k: v[0] for k, v in sorted(out.items(), key=lambda kv: kv[0].lower())}
+
+
 def font_file(family: str) -> Path | None:
-    """The file behind a family we may use: bundled fonts/ or a Windows fallback."""
+    """The file behind a family we may use: bundled fonts/, a Windows fallback or an installed font."""
     if family in FONTS:
         return FONT_DIR / FONTS[family]
+    installed = installed_fonts().get(family)
+    if installed and family not in {f[2] for f in FALLBACKS} and family != DEFAULT_FALLBACK[0]:
+        return installed
     for *_, name, file in FALLBACKS:
         if name == family:
             path = WINDOWS_FONTS / file

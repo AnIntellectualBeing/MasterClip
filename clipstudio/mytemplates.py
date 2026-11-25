@@ -7,9 +7,55 @@ import threading
 import uuid
 from pathlib import Path
 
-from .design import CAM_LAYOUTS, Design
+from .design import CAM_LAYOUTS, CaptionStyle, Design
 
 MAX_TEMPLATES = 60
+MAX_CAPTION_STYLES = 30
+
+
+class MyCaptionStyles:
+    """"Save as my caption style": just the caption look, kept in <data>/my-caption-styles.json."""
+
+    def __init__(self, root: Path):
+        self.path = Path(root) / "my-caption-styles.json"
+        self.lock = threading.Lock()
+
+    def all(self) -> list[dict]:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return [s for s in data if isinstance(s, dict) and s.get("id") and isinstance(s.get("caption"), dict)]
+
+    def _write(self, items) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        part = self.path.with_suffix(".part")
+        part.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
+        part.replace(self.path)
+
+    def add(self, name: str, caption: dict) -> dict:
+        name = " ".join(str(name or "").split())[:40]
+        if not name:
+            raise ValueError("Give your caption style a name.")
+        checked = CaptionStyle(**caption).model_dump()
+        for key in ("x", "y"):  # where it sits belongs to the layout, not the look
+            checked.pop(key, None)
+        with self.lock:
+            items = [s for s in self.all() if s["name"].lower() != name.lower()]
+            if len(items) >= MAX_CAPTION_STYLES:
+                raise ValueError(f"You can keep up to {MAX_CAPTION_STYLES} caption styles. Delete one first.")
+            item = {"id": "cap-" + uuid.uuid4().hex[:10], "name": name, "caption": checked}
+            items.append(item)
+            self._write(items)
+            return item
+
+    def delete(self, ident: str) -> None:
+        with self.lock:
+            items = self.all()
+            kept = [s for s in items if s["id"] != ident]
+            if len(kept) == len(items):
+                raise KeyError(ident)
+            self._write(kept)
 
 
 class MyTemplates:

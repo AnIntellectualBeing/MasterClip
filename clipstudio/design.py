@@ -32,12 +32,31 @@ _HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
 
 
+def usable_font(family: str) -> bool:
+    """A bundled font, or a font installed on this PC (captions only)."""
+    if family in FONTS:
+        return True
+    from .fonts import installed_fonts
+
+    return isinstance(family, str) and family in installed_fonts()
+
+
+def _font_path(family: str) -> Path:
+    if family in FONTS:
+        return FONT_DIR / FONTS[family]
+    from .fonts import installed_fonts
+
+    return installed_fonts()[family]
+
+
 @lru_cache(maxsize=None)
 def font_height_ratio(family: str) -> float:
     """libass sizes text by the font's Windows ascent+descent, browsers by the em.
     Multiply a CSS-style size by this so the video matches the preview."""
     try:
-        data = (FONT_DIR / FONTS[family]).read_bytes()
+        data = _font_path(family).read_bytes()
+        if data[:4] == b"ttcf":
+            return 1.0  # font collections: keep 1.0 rather than mis-read the offsets
         tables = {}
         for i in range(struct.unpack(">H", data[4:6])[0]):
             tag, _, offset, _ = struct.unpack(">4sIII", data[12 + 16 * i : 28 + 16 * i])
@@ -90,13 +109,18 @@ class CaptionStyle(BaseModel):
     uppercase: bool = True
     words: int = Field(default=2, ge=1, le=10)
     emoji: bool = False  # a fitting emoji above the caption (see emoji.py)
+    # How the words move (pop/karaoke/twoline/classic/boxed; punch + twotone always build up):
+    # auto = what the style always did, highlight = spoken word coloured, pop_word = spoken word
+    # coloured and pops, pop_line = the whole line pops in, one_by_one = only the spoken word,
+    # build_up = words appear as they are said, full_line = the line just sits there.
+    animation: Literal["auto", "highlight", "pop_word", "pop_line", "one_by_one", "build_up", "full_line"] = "auto"
 
     _colors = field_validator("color", "highlight", "outline_color", "second")(_hex)
 
     @field_validator("font")
     @classmethod
     def known_font(cls, value):
-        return value if value in FONTS else "Anton"
+        return value if usable_font(value) else "Anton"
 
 
 class TitleStyle(BaseModel):
