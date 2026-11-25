@@ -352,6 +352,8 @@
     $("#capFields").classList.toggle("dim", off);
     $("#capWordsRow").hidden = !["pop", "karaoke", "boxed", "punch", "twotone"].includes(c.style);
     $("#capWords").textContent = c.words;
+    $("#capAnimRow").hidden = ["punch", "twotone", "none"].includes(c.style);
+    $$("#capAnim button").forEach((b) => b.classList.toggle("on", b.dataset.v === (c.animation || "auto")));
     $$("#capFonts button").forEach((b) => b.classList.toggle("on", b.dataset.font === c.font));
     $("#capSize").value = c.size; $("#capSizeVal").textContent = c.size;
     $$("#capColor button").forEach((b) => b.classList.toggle("on", b.dataset.c === c.color));
@@ -404,6 +406,7 @@
       return b;
     }));
     $("#capSize").addEventListener("input", (e) => capSet({ size: Number(e.target.value) }));
+    $$("#capAnim button").forEach((b) => b.addEventListener("click", () => capSet({ animation: b.dataset.v })));
     $("#capOutline").addEventListener("input", (e) => capSet({ outline: Number(e.target.value) }));
     swatches("#capColor", "color");
     swatches("#capHi", "highlight");
