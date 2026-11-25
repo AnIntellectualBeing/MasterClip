@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Literal
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+
+from . import overlays as _overlays
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, field_validator
@@ -55,6 +57,7 @@ events: dict[str, threading.Event] = {}
 busy = threading.Lock()
 searches = Searches()
 my_templates = MyTemplates(store.root)
+_overlays.set_asset_dir(store.root / "brand")
 
 
 @asynccontextmanager
@@ -1324,6 +1327,48 @@ def open_output():
     folder = output_folder()
     _open_in_explorer(folder)
     return dict(folder=str(folder))
+
+
+class OverlayPreview(BaseModel):
+    design: dict
+    part: str = Field(default="card", pattern="^(card|handles|logo|outro)$")
+    title: str = Field(default="", max_length=200)
+
+
+@app.post("/api/overlay-preview")
+def overlay_preview(body: OverlayPreview):
+    """The card / handles bar / logo / outro drawn exactly as the video will show it (1080 frame)."""
+    from io import BytesIO
+
+    from .design import Design
+
+    try:
+        design = Design(**body.design)
+    except ValueError as exc:
+        raise HTTPException(400, f"Check the design: {_friendly(exc)}")
+    image = _overlays.preview_png(design, body.part, body.title or None)
+    if image is None:
+        return Response(status_code=204)
+    buffer = BytesIO()
+    image.save(buffer, "PNG")
+    return Response(buffer.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/brand-assets", status_code=201)
+def upload_brand_asset(file: UploadFile = File(...)):
+    """A picture (avatar, logo, background), an outro video or a song for the Cards / My brand / Outro tabs."""
+    try:
+        return _overlays.save_asset(file.file, file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/brand-assets/{ident}")
+def get_brand_asset(ident: str):
+    path = _overlays.asset_path(ident)
+    if not path:
+        raise HTTPException(404, "That file is gone. Pick it again.")
+    return FileResponse(path)
 
 
 @app.get("/api/templates")

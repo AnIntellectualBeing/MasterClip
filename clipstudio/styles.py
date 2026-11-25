@@ -236,6 +236,14 @@ def title_lines(design: Design, text: str):
     return lines, em, tx, ty, rect
 
 
+def credit_label(design: Design) -> str:
+    """The credit line: "@name" or "Clip: name"."""
+    name = design.credit.strip()
+    if design.credit_style == "clip":
+        return "Clip: " + name.lstrip("@")
+    return name if name.startswith("@") else "@" + name
+
+
 def text_families(design: Design, segments, title_text, shouts=()) -> set[str]:
     """Every font family the subtitles will ask for (so render can put the files next to them)."""
     from .fonts import families_used
@@ -419,8 +427,7 @@ def build_ass(design: Design, segments, duration: float, title_text: str | None 
                 f"{{\\an5\\pos({round(tx)},{round(y)})\\q2}}{rich(line, title.font)}"
             )
     if design.credit_on and design.credit.strip():
-        name = design.credit.strip()
-        name = name if name.startswith("@") else "@" + name
+        name = credit_label(design)
         events.append(
             f"Dialogue: 3,{ass_time(0)},{ass_time(duration)},Credit,,0,0,0,,"
             f"{{\\an5\\pos({round(design.credit_x * W)},{round(design.credit_y * H)})}}{rich(name, 'Poppins ExtraBold')}"
