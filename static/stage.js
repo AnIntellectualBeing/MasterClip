@@ -383,19 +383,29 @@
       ctx.restore();
     }
 
-    function place(node, r) {
-      Object.assign(node.style, { left: r[0] * 100 + "%", top: r[1] * 100 + "%", width: r[2] * 100 + "%", height: r[3] * 100 + "%" });
+    /* Background card (My brand) shrinks the whole picture into a card: [x, y, w, h] of that card as a
+       share of the frame (= drawFrame), or the whole frame. The gameplay / cam / extra boxes live inside it. */
+    function inner() {
+      const d = st.d, b = d && d.brand;
+      if (!b || !b.frame || b.frame === "none") return [0, 0, 1, 1];
+      const [W, H] = CANVAS[d.aspect], side = Math.min(W, H);
+      const m = Math.round((b.frame_pad * side) / 2) * 2;
+      return [m / W, m / H, 1 - (2 * m) / W, 1 - (2 * m) / H];
+    }
+    function place(node, r, box) {
+      const [ix, iy, iw, ih] = box || [0, 0, 1, 1];
+      Object.assign(node.style, { left: (ix + r[0] * iw) * 100 + "%", top: (iy + r[1] * ih) * 100 + "%", width: r[2] * iw * 100 + "%", height: r[3] * ih * 100 + "%" });
     }
     function paintBoxes() {
-      const v = view(), layout = effectiveLayout(v);
+      const v = view(), layout = effectiveLayout(v), box = inner();
       parts.game.hidden = !st.editable || layout === "split";
-      if (!parts.game.hidden) place(parts.game, gameArea(v));
+      if (!parts.game.hidden) place(parts.game, gameArea(v), box);
       const cr = camOutputRect(v);
       parts.cam.hidden = !st.editable || !cr;
-      if (cr) place(parts.cam, cr);
+      if (cr) place(parts.cam, cr, box);
       const er = extraArea(v);
       parts.extra.hidden = !st.editable || !er;
-      if (er) place(parts.extra, er);
+      if (er) place(parts.extra, er, box);
       // Platform safe zones (preview only): where the app's buttons and text sit on top of a Short.
       q(".st-safe").hidden = !st.safe || st.d.aspect !== "9:16";
     }
@@ -514,6 +524,11 @@
         }
       }
     }
+    function overFace(d) {
+      if (d.aspect === "16:9" || !["stack", "corner", "side", "trio"].includes(effectiveLayout(view()))) return false;
+      const r = camOutputRect(view());
+      return !!r && r[1] <= d.title.y && d.title.y <= r[1] + r[3];
+    }
     function paintTitle() {
       const d = st.d, t = d.title, box = parts.title, k = scale();
       const look = TITLE_LOOKS[t.style] || TITLE_LOOKS.white_box;
@@ -533,6 +548,19 @@
       box.style.webkitTextStroke = look.stroke ? `${look.w * 2 * k}px ${look.stroke}` : "0";
       box.style.paintOrder = "stroke fill";
       box.classList.toggle("locked", meme);
+      // = styles.title_lines(): a long title over the streamer's cam shrinks to one line (or a smaller box).
+      if (!box.hidden && overFace(d)) {
+        const pad = look.bg ? 36 * k : 8 * k;
+        const lines = (px) => Math.round((box.clientHeight - pad) / (px * 1.1));
+        if (lines(t.size * k) > 1) {
+          let fitted = false;
+          for (const f of [0.9, 0.8, 0.72, 0.64]) {
+            box.style.fontSize = t.size * k * f + "px";
+            if (lines(t.size * k * f) <= 1) { fitted = true; break; }
+          }
+          if (!fitted) box.style.fontSize = t.size * k * 0.8 + "px";
+        }
+      }
       const credit = parts.credit;
       const name = (d.credit || st.creditFallback || "").replace(/^@/, "");
       credit.hidden = !(d.credit_on && name);
@@ -720,8 +748,11 @@
       const corner = e.target.dataset.corner || null;
       const rect = root.getBoundingClientRect();
       const sx = e.clientX, sy = e.clientY;
-      const lines = targets(name);
       const isRect = isBox(name);
+      // Boxes are kept in the picture's own space; with a background card that picture is smaller.
+      const [ix, iy, iw, ih] = isRect ? inner() : [0, 0, 1, 1];
+      const raw = targets(name);
+      const lines = { xs: raw.xs.map((x) => (x - ix) / iw), ys: raw.ys.map((y) => (y - iy) / ih) };
       const r0 = isRect ? getRect(name) : null;
       const t0 = isRect ? null : textState(name);
       const b0 = isRect ? null : bounds(name);
@@ -729,7 +760,7 @@
       node.setPointerCapture(e.pointerId);
       root.classList.add("dragging");
       const move = (ev) => {
-        const dx = (ev.clientX - sx) / rect.width, dy = (ev.clientY - sy) / rect.height;
+        const dx = (ev.clientX - sx) / rect.width / iw, dy = (ev.clientY - sy) / rect.height / ih;
         const free = ev.altKey; // hold Alt to move without snapping
         let gx = [], gy = [];
         if (isRect) {
@@ -751,6 +782,7 @@
             x = left; y = top; w = right - left; h = bottom - top;
           }
           setRect(name, [x, y, w, h]);
+          gx = gx.map((g) => ix + g * iw); gy = gy.map((g) => iy + g * ih); // guides drawn on the screen
         } else if (!corner) {
           let x = t0.x + dx, y = t0.y + dy;
           const bw = b0 ? b0[2] : 0, bh = b0 ? b0[3] : 0;

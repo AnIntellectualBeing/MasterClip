@@ -34,6 +34,17 @@
     if (bar) bar.insertBefore(b, before || null);
     return b;
   }
+  /* An item in the top bar's "More ▾" menu (index.html #moreSlot marks the place). */
+  function moreItem(text, hint, onClick) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "more-item"; b.setAttribute("role", "menuitem");
+    b.innerHTML = "<b></b><small></small>";
+    b.firstChild.textContent = text; b.lastChild.textContent = hint;
+    b.addEventListener("click", onClick);
+    const slot = $("#moreSlot");
+    if (slot) slot.parentNode.insertBefore(b, slot);
+    return b;
+  }
   function clipName(t) { return (t || "clip").replace(/[^\w\s()'-]+/g, " ").trim().slice(0, 60) || "clip"; }
 
   /* ---------------- Creators ---------------- */
@@ -43,11 +54,11 @@
       <label class="field"><span>Twitch name or YouTube channel</span>
         <input id="crText" type="text" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. shroud  or  youtube.com/@name"></label>
       <div class="auto-row">
-        <label class="field"><span>Clip style</span><select id="crStyle"></select></label>
+        <label class="field"><span>Template</span><select id="crStyle"></select></label>
         <label class="field"><span>Clip length</span><select id="crLen"><option value="15">15 s</option><option value="30" selected>30 s</option><option value="45">45 s</option><option value="60">60 s</option></select></label>
       </div>
       <label class="switch"><input id="crCaps" type="checkbox" checked><span></span> Captions</label>
-      <p class="hint">The style is saved now. Changing a template later won't change this creator.</p>
+      <p class="hint">This creator keeps the template as it is now, even if you change the template later.</p>
       <button class="primary" type="submit">Add creator</button>
       <p id="crMsg" class="hint auto-err" role="status"></p>
     </form>
@@ -248,9 +259,8 @@
   }
 
   /* ---------------- top bar ---------------- */
-  const help = $('.top-actions a[href="/help"]');
-  topButton("📡 Creators", "Clip streamers automatically when they go live", openCreators, help);
-  const remoteBtn = topButton("📱 Phone remote", "Control live clipping from your phone", openRemote, help);
+  topButton("📡 Creators", "Clip streamers automatically when they go live", openCreators, $("#topSlot"));
+  const remoteBtn = moreItem("📱 Phone remote", "Start and clip live streams from your phone", openRemote);
   const report = document.createElement("button");
   report.type = "button"; report.className = "ghost small report-fab"; report.textContent = "Report a problem";
   report.title = "Tell us what went wrong (nothing is sent automatically)";

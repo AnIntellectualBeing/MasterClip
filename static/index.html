@@ -29,19 +29,26 @@
       <span>MasterClip</span>
     </a>
     <div class="top-actions">
-      <button id="newWindow" class="ghost" type="button" title="Start another stream without stopping this one">＋ New window</button>
-      <a class="ghost" href="/help" target="_blank" rel="noopener">Help</a>
       <button id="openLicence" class="ghost licence-chip" type="button" title="Your licence" hidden><span id="licenceChip">Free trial</span></button>
+      <span id="topSlot" hidden></span>
       <button id="openPosting" class="ghost" type="button" title="Post clips to Instagram and YouTube">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 5h-3v6h-4V8H7zM5 15h2v3h10v-3h2v5H5z"/></svg>
         Posting <i id="postingDot" class="dot" hidden></i>
       </button>
       <button id="openCampaigns" class="ghost" type="button" title="Clipping campaigns that pay per views, and your posted clips">💰 Campaigns</button>
-      <button id="openStorage" class="ghost" type="button" title="Choose where clips and downloads are saved (use another drive if C: is full)">📁 Save folder <i id="storageDot" class="dot" hidden></i></button>
       <button id="openFolder" class="ghost" type="button" title="Open the folder with your saved clips">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         My clips
       </button>
+      <div class="more-menu">
+        <button id="moreBtn" class="ghost" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu">More <i id="moreDot" class="dot" hidden></i> ▾</button>
+        <div id="moreMenu" class="more-pop" role="menu" hidden>
+          <button id="newWindow" class="more-item" type="button" role="menuitem"><b>＋ New window</b><small>Clip another stream at the same time</small></button>
+          <button id="openStorage" class="more-item" type="button" role="menuitem"><b>📁 Save folder <i id="storageDot" class="dot" hidden></i></b><small>Where clips and downloads go</small></button>
+          <span id="moreSlot" hidden></span>
+          <a class="more-item" href="/help" target="_blank" rel="noopener" role="menuitem"><b>❓ Help</b><small>How MasterClip works</small></a>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -55,6 +62,19 @@
     <div id="campBanner" class="notice-soft camp-banner" hidden><span id="campBannerText"></span><button id="campBannerX" class="ghost small" type="button">Stop</button></div>
 
     <div id="notice" class="notice" role="alert" hidden><span id="noticeText"></span><button id="noticeClose" type="button" aria-label="Close">×</button></div>
+
+    <div id="whatsNew" class="whats-new" role="note" aria-labelledby="whatsNewTitle" hidden>
+      <div class="wn-head"><strong id="whatsNewTitle">✨ New in MasterClip 1.6</strong><button id="whatsNewX" class="ghost small" type="button">Got it</button></div>
+      <ul>
+        <li><b>Layouts + Set it manually</b>: 11 ready layouts, or drag boxes over the stream to pick the cam and gameplay yourself.</li>
+        <li><b>Cards, My brand, Outro &amp; music</b>: X / Instagram / YouTube post cards, your handles and logo, an end card and a song.</li>
+        <li><b>Fix captions</b>: change words and timing, 7 ways for words to move, your own fonts and saved caption styles.</li>
+        <li><b>Rate your clips</b> with stars: MasterClip learns what you like. <b>Transcript</b>: pick any part and make a clip of it.</li>
+        <li><b>Creators</b>: clip a streamer by itself when they go live. <b>Phone remote</b> (in More): start and clip from your phone.</li>
+        <li><b>Campaigns</b>: clipping campaigns that pay per view, and a list of what you posted.</li>
+      </ul>
+      <p class="hint">All of these are off until you use them, so your clips look the same as before.</p>
+    </div>
 
     <div id="welcomeBack" class="welcome-back" hidden>
       <span class="wb-icon" aria-hidden="true">🎬</span>
@@ -250,7 +270,7 @@
               </div>
               <p class="hint">The title is written for each clip. Change its words on any clip with ✏️ Edit, or right on the clip card.</p>
               <div class="switch-row col">
-                <label class="switch"><input id="fxCredit" type="checkbox"><span></span> Streamer name (@name) at the bottom</label>
+                <label class="switch"><input id="fxCredit" type="checkbox"><span></span> Streamer name at the bottom (@name)</label>
                 <label class="switch"><input id="fxShout" type="checkbox"><span></span> 💥 Shout effect: big word + shake when someone yells</label>
                 <label class="switch"><input id="fxSfx" type="checkbox"><span></span> 🔊 Boom sound with the shout effect</label>
               </div>
@@ -378,9 +398,9 @@
             <button id="postAll" class="primary" type="button">📤 Post / schedule all</button>
             <button id="changeDesign" class="ghost" type="button" title="Go back, change the look, then come back and apply it">🎨 Change design</button>
             <button id="openTranscript" class="ghost" type="button" title="Read everything that was said and clip any part of it">📜 Transcript</button>
-            <button id="openChatHelp" class="ghost" type="button" title="Let a free chatbot (ChatGPT, Gemini...) find moments in a long video">🤖 Free chatbot helper</button>
-            <button id="saveAll" class="ghost" type="button">💾 Save all to my Videos</button>
-            <button id="startOver" class="ghost" type="button">Start a new video</button>
+            <button id="openChatHelp" class="ghost" type="button" title="Let a free chatbot (ChatGPT, Gemini...) find moments in a long video">🤖 Chatbot helper</button>
+            <button id="saveAll" class="ghost" type="button" title="Copy every clip into your save folder">💾 Save all</button>
+            <button id="startOver" class="ghost" type="button">New video</button>
           </div>
         </div>
         <p id="aiNote" class="ai-note" hidden></p>
@@ -428,7 +448,7 @@
       <header class="editor-top">
         <strong id="editorTitle">Edit clip</strong>
         <div class="row-gap">
-          <label class="switch" title="The look (layout, captions, title style) goes on every other clip of this video too. Each clip keeps its own moment and title."><input id="eApplyAll" type="checkbox"><span></span> Use this look on all clips</label>
+          <label class="switch" title="The whole look (layout, boxes, captions, title style, cards, brand) goes on every other clip of this video, and new clips of this video get it too. Each clip keeps its own moment and title."><input id="eApplyAll" type="checkbox"><span></span> Use this on all clips of this video</label>
           <button id="editorCancel" class="ghost" type="button">Cancel</button>
           <button id="editorSave" class="primary" type="button">Save changes</button>
         </div>
@@ -455,7 +475,13 @@
             <button class="tab" data-etab="captions" type="button">Captions</button>
             <button class="tab" data-etab="words" type="button">Words</button>
             <button class="tab" data-etab="title" type="button">Title</button>
+            <button class="tab" data-etab="cards" type="button">Cards</button>
+            <button class="tab" data-etab="brand" type="button">My brand</button>
+            <button class="tab" data-etab="outro" type="button">Outro &amp; music</button>
           </div>
+          <div class="etab ov-tab" id="etab-cards" hidden></div>
+          <div class="etab ov-tab" id="etab-brand" hidden></div>
+          <div class="etab ov-tab" id="etab-outro" hidden></div>
           <div class="etab" id="etab-layout">
             <label class="field"><span>Template</span><select id="eTemplate"></select></label>
             <div class="field"><span>Empty space</span>
@@ -464,7 +490,7 @@
             <div class="field" id="eCamField"><span>Streamer cam</span>
               <div class="seg" id="eCamPos"><button data-v="keep" type="button" title="Leave the cam where it is in the stream">As in stream</button><button data-v="top" type="button">Top</button><button data-v="bottom" type="button">Bottom</button><button data-v="corner" type="button" title="A box you can drag anywhere on the preview">Box (drag it)</button><button data-v="hidden" type="button" title="Blur the streamer's cam out of the picture">Remove</button></div>
               <p class="hint" id="camHint"></p>
-              <button id="drawCam" class="ghost small" type="button">✏️ Draw the cam box myself</button>
+              <button id="drawCam" class="ghost small" type="button" title="Opens Set it manually with an orange box to drag over the cam">✏️ Mark the cam myself</button>
             </div>
             <label class="field" id="eSplitField"><span>Cam size <b id="eSplitVal"></b></span><input id="eSplit" type="range" min="0.2" max="0.7" step="0.01"></label>
             <label class="field" id="eFocusField"><span>Gameplay left ↔ right</span><input id="eFocus" type="range" min="0" max="1" step="0.01"></label>
@@ -486,7 +512,7 @@
             </div>
             <label class="field"><span>Size <b id="eCapSizeVal"></b></span><input id="eCapSize" type="range" min="24" max="160" step="1"></label>
             <div class="field"><span>Colour</span><div class="swatches" id="eCapColor"></div></div>
-            <div class="field"><span>Highlight</span><div class="swatches" id="eCapHi"></div></div>
+            <div class="field"><span>Spoken word colour</span><div class="swatches" id="eCapHi"></div></div>
             <label class="field"><span>Outline <b id="eOutlineVal"></b></span><input id="eOutline" type="range" min="0" max="16" step="1"></label>
             <div class="field"><span>Outline colour</span><div class="swatches" id="eCapEdge"></div></div>
             <div class="field"><span>My caption styles</span>
@@ -538,16 +564,9 @@
               <label class="field" id="eTitleSecsField"><span>For the first <b id="eTitleSecsVal"></b> s</span><input id="eTitleSecs" type="range" min="2" max="60" step="1"></label>
             </div>
             <label class="switch"><input id="eTitleShow" type="checkbox"><span></span> Show the title</label>
-            <label class="switch"><input id="eCredit" type="checkbox"><span></span> Show credit <b id="eCreditName"></b></label>
+            <label class="switch"><input id="eCredit" type="checkbox"><span></span> Streamer name at the bottom <b id="eCreditName"></b></label>
           </div>
         </div>
-      </div>
-    </div>
-    <div id="camPicker" class="cam-picker" hidden>
-      <div class="cam-picker-card">
-        <strong>Drag a box over the streamer's face cam</strong>
-        <div class="cam-picker-stage"><canvas id="camCanvas"></canvas><div id="camDraw" class="drag-box draw"></div></div>
-        <div class="row-end row-gap"><button id="camCancel" class="ghost" type="button">Cancel</button><button id="camDone" class="primary" type="button">Use this box</button></div>
       </div>
     </div>
   </div>
@@ -576,7 +595,7 @@
   <div id="chatHelpDlg" class="editor" hidden role="dialog" aria-modal="true" aria-labelledby="chTitle">
     <div class="editor-shell sched-shell explore-shell">
       <header class="editor-top">
-        <strong id="chTitle">Free chatbot helper</strong>
+        <strong id="chTitle">Chatbot helper (free)</strong>
         <button id="chClose" class="ghost" type="button" aria-label="Close">✕</button>
       </header>
       <div class="explore-body">

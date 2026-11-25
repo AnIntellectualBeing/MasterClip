@@ -97,15 +97,14 @@
           <label class="switch fr-round"><input type="checkbox" data-opt="round"><span></span> Round corners on the cam</label>
           <label class="switch"><input type="checkbox" data-opt="blur"><span></span> Blurred stream behind empty space</label>
           <label class="switch"><input type="checkbox" data-opt="safe"><span></span> Show where app buttons cover the video (preview only)</label>
-          ${ctx === "clip"
-            ? `<label class="switch"><input type="checkbox" data-opt="all"><span></span> Use for all clips of this video</label>`
+          ${ctx === "clip" ? ""
             : `<label class="switch"><input type="checkbox" data-opt="keep"><span></span> Same boxes for every video (saved with your template)</label>`}
         </div>
       </div>`;
     host.replaceChildren(root);
     const q = (s) => root.querySelector(s);
     const qa = (s) => [...root.querySelectorAll(s)];
-    const state = { all: false, safe: false, drag: null };
+    const state = { safe: false, drag: null };
     const src = q(".fr-src"), canvas = q(".fr-src canvas");
     const nodes = {};
     for (const [name, b] of Object.entries(BOXES)) {
@@ -228,13 +227,14 @@
     }, { passive: false });
 
     /* --- controls --- */
-    q('[data-act="addcam"]').addEventListener("click", () => {
+    function markCam() {
       const des = d();
-      des.cam_roi = (opts.autoCam && opts.autoCam()) || [0.7, 0.05, 0.28, 0.28];
+      des.cam_roi = des.cam_roi || (opts.autoCam && opts.autoCam()) || [0.7, 0.05, 0.28, 0.28];
       if (ctx === "template") des.keep_boxes = true;
       if (des.layout === "full" && !des.hide_cam) Object.assign(des, patchFor(opts.layouts().find((x) => x.id === "cam_top"), des.aspect));
       changed();
-    });
+    }
+    q('[data-act="addcam"]').addEventListener("click", markCam);
     q('[data-act="auto"]').addEventListener("click", () => {
       const des = d();
       des.cam_roi = (opts.autoCam && opts.autoCam()) || null;
@@ -268,7 +268,6 @@
       if (opt === "round") des.cam_shape = on ? "round" : "frame";
       else if (opt === "blur") des.bg_blur = on;
       else if (opt === "keep") des.keep_boxes = on;
-      else if (opt === "all") { state.all = on; return; }
       else if (opt === "safe") { state.safe = on; if (opts.stage && opts.stage()) opts.stage().setSafe(on); return; }
       changed();
     });
@@ -298,8 +297,6 @@
       q('[data-opt="safe"]').checked = state.safe;
       const keep = q('[data-opt="keep"]');
       if (keep) keep.checked = !!des.keep_boxes;
-      const all = q('[data-opt="all"]');
-      if (all) all.checked = state.all;
       q('[data-act="addcam"]').hidden = !!des.cam_roi;
       root.classList.toggle("has-cam", !!des.cam_roi);
       paintSource();
@@ -307,8 +304,10 @@
     chips();
     return {
       sync, paintSource,
-      get allClips() { return state.all; },
-      reset() { state.all = false; root.open = false; sync(); },
+      reset() { root.open = false; sync(); },
+      /* "Mark the streamer cam" from outside (clip editor's Streamer cam field): open the editor with the
+         orange box on the frame, ready to drag. */
+      markCam() { root.open = true; markCam(); root.scrollIntoView({ block: "nearest", behavior: "smooth" }); },
       get open() { return root.open; },
     };
   }

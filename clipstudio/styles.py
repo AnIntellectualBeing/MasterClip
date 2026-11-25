@@ -232,6 +232,11 @@ def title_lines(design: Design, text: str):
         else:
             em = em * 0.8
             lines = wrap(shown, title.font, em, W * 0.92 - 2 * pad)
+    # A single word wider than the frame (long names, Kannada...) shrinks until it fits too.
+    room = W * 0.92 - 2 * pad
+    widest = max((text_width(line, title.font, em) for line in lines), default=0)
+    if widest > room > 0:
+        em = em * room / widest
     tx, ty = title.x * W, title.y * H
     if design.layout == "meme":
         tx, ty = W / 2, design.meme_bar * H / 2
@@ -444,6 +449,9 @@ def build_ass(design: Design, segments, duration: float, title_text: str | None 
     if text and title.show:
         end = duration if title.seconds <= 0 else min(duration, title.seconds)
         lines, em, tx, ty, rect = title_lines(design, text)
+        # title_lines may shrink the title (long hook over the cam, very long word): draw it at that size.
+        share = em / (title.size * scale) if title.size else 1.0
+        fs = scaled(share)
         if rect:
             events.append(
                 f"Dialogue: 2,{ass_time(0)},{ass_time(end)},Title,,0,0,0,,"
@@ -454,7 +462,7 @@ def build_ass(design: Design, segments, duration: float, title_text: str | None 
             y = ty + (i - (len(lines) - 1) / 2) * step
             events.append(
                 f"Dialogue: 3,{ass_time(0)},{ass_time(end)},Title,,0,0,0,,"
-                f"{{\\an5\\pos({round(tx)},{round(y)})\\q2}}{rich(line, title.font)}"
+                f"{{\\an5\\pos({round(tx)},{round(y)})\\q2{fs}}}{rich(line, title.font)}"
             )
     if design.credit_on and design.credit.strip():
         name = credit_label(design)

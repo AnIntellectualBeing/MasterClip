@@ -24,6 +24,19 @@
     }
     return framing;
   }
+  /* Cards / My brand / Outro & music: the same panels as the Design step (overlays.js), for this clip. */
+  let overlays = null;
+  function overlayPanels() {
+    if (!overlays && window.ClipOverlays && window.ClipOverlays.create) {
+      overlays = window.ClipOverlays.create({ cards: $("#etab-cards"), brand: $("#etab-brand"), outro: $("#etab-outro") }, {
+        current: () => ed.d,
+        update: (fn, quiet) => { fn(ed.d); if (quiet) stage().setDesign(ed.d); else refresh(); },
+        credit: () => (ed.d && ed.d.credit) || (ed.job && ed.job.channel) || "",
+        fonts: () => window.ClipStudio.state.fonts || [],
+      });
+    }
+    return overlays;
+  }
   function stage() {
     if (!ed.stage) {
       ed.stage = S().create($("#stageHost"), { resolution: 0.5, onChange: () => syncControls() });
@@ -99,6 +112,7 @@
     const span = ed.end - ed.start;
     $("#trimLabel").textContent = `${window.ClipStudio.clock(ed.start)} → ${window.ClipStudio.clock(ed.end)} · ${span.toFixed(1)} s`;
     framingPanel().sync();
+    if (overlayPanels() && ed.d.card) overlays.sync();
   }
   function onSeg(id, fn) {
     $$(`#${id} button`).forEach((b) => b.addEventListener("click", () => { fn(b.dataset.v); refresh(); }));
@@ -312,6 +326,7 @@
   $$(".tab[data-etab]").forEach((tab) => tab.addEventListener("click", () => {
     $$(".tab[data-etab]").forEach((t) => t.classList.toggle("active", t === tab));
     $$(".etab").forEach((p) => { p.hidden = p.id !== "etab-" + tab.dataset.etab; });
+    if (overlays && ed.d) overlays.sync();
   }));
 
   /* trim */
@@ -347,52 +362,17 @@
     v.play().then(() => { ed.playing = true; $("#playBtn").textContent = "❚❚"; }).catch(() => {});
   });
 
-  /* draw the cam box on the source */
-  let pick = null;
-  $("#drawCam").addEventListener("click", () => {
-    const v = ed.video;
-    if (!v || !v.videoWidth) return;
-    $("#camPicker").hidden = false;
-    const c = $("#camCanvas");
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    $(".cam-picker-stage").style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`;
-    c.getContext("2d").drawImage(v, 0, 0);
-    pick = ed.d.cam_roi ? [...ed.d.cam_roi] : null;
-    paintPick();
-  });
-  function paintPick() {
-    const box = $("#camDraw");
-    box.hidden = !pick;
-    if (pick) Object.assign(box.style, { left: pick[0] * 100 + "%", top: pick[1] * 100 + "%", width: pick[2] * 100 + "%", height: pick[3] * 100 + "%" });
-  }
-  $(".cam-picker-stage").addEventListener("pointerdown", (e) => {
-    const area = $(".cam-picker-stage"), rect = area.getBoundingClientRect();
-    area.setPointerCapture(e.pointerId);
-    const x0 = (e.clientX - rect.left) / rect.width, y0 = (e.clientY - rect.top) / rect.height;
-    const move = (ev) => {
-      const x1 = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
-      const y1 = Math.min(1, Math.max(0, (ev.clientY - rect.top) / rect.height));
-      pick = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map((v) => Math.round(v * 10000) / 10000);
-      paintPick();
-    };
-    const up = () => { area.removeEventListener("pointermove", move); area.removeEventListener("pointerup", up); };
-    area.addEventListener("pointermove", move);
-    area.addEventListener("pointerup", up);
-  });
-  $("#camCancel").addEventListener("click", () => { $("#camPicker").hidden = true; });
-  $("#camDone").addEventListener("click", () => {
-    if (!pick || pick[2] < 0.04 || pick[3] < 0.04) { window.ClipStudio.toast("Drag a bigger box over the cam."); return; }
-    ed.d.cam_roi = pick;
-    if (ed.d.layout === "full") { ed.d.layout = "stack"; ed.d.cam_side = "top"; }
-    $("#camPicker").hidden = true;
-    refresh();
-  });
+  /* "Mark the cam myself" opens "Set it manually" with the orange cam box on the frame. */
+  $("#drawCam").addEventListener("click", () => framingPanel().markCam());
 
   /* open / close / save */
   async function open(job, index) {
     const clip = job.clips[index];
     ed.job = job; ed.index = index; ed.clip = clip;
     ed.d = JSON.parse(JSON.stringify(clip.design));
+    // Clips made before 1.6 have no card / brand / outro / music: start those from the defaults (all off).
+    const base = ((window.ClipStudio.state.templates || [])[0] || {}).design || {};
+    for (const k of ["card", "brand", "outro", "music"]) if (!ed.d[k] && base[k]) ed.d[k] = JSON.parse(JSON.stringify(base[k]));
     ed.start = clip.start; ed.end = clip.end; ed.title = clip.title || "";
     $("#editorTitle").textContent = `Edit clip ${index + 1}`;
     framingPanel().reset();
@@ -448,9 +428,10 @@
     document.body.style.overflow = "";
   }
   $("#editorCancel").addEventListener("click", close);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#editor").hidden) { if (!$("#camPicker").hidden) $("#camPicker").hidden = true; else close(); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#editor").hidden) close(); });
   $("#editorSave").addEventListener("click", async () => {
-    const edit = { start: ed.start, end: ed.end, title: ed.title, design: ed.d, framing_all: !!(framing && framing.allClips), apply_all: $("#eApplyAll").checked };
+    // One switch: the whole look (framing included) on every clip of this video, remembered for new clips.
+    const edit = { start: ed.start, end: ed.end, title: ed.title, design: ed.d, apply_all: $("#eApplyAll").checked };
     const job = ed.job, index = ed.index;
     if (ed.cuesDirty) {
       const segments = [...ed.all.filter((c) => !inClip(c)), ...ed.cues.filter((c) => String(c.text).trim() && c.end > c.start)]

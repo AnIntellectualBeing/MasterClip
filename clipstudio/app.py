@@ -144,10 +144,12 @@ class ClipEdit(BaseModel):
     end: float = Field(gt=0, allow_inf_nan=False)
     title: str = Field(default="", max_length=140)
     design: dict
-    # "Use for all clips of this video": this clip's framing goes on every clip of the same shape.
-    framing_all: bool = False
-    # Put this clip's look (not its trim or title) on every other clip of the same shape too.
+    # "Use this on all clips of this video" (the one switch in the clip editor): this clip's whole look
+    # (not its trim or title) goes on every other clip of the same shape, and its framing is remembered
+    # for this video's new and live clips.
     apply_all: bool = False
+    # Older callers: only the framing (layout + boxes) goes on the other clips and is remembered.
+    framing_all: bool = False
 
 
 class ProjectRequest(SourceRequest):
@@ -791,11 +793,11 @@ def rerender_clip(ident, index, edit: ClipEdit):
         except OSError:
             pass
         if edit.apply_all:
-            # The whole look (framing included) goes on the other clips; remember the framing too.
-            if edit.framing_all:
-                from .design import framing_of
-                store.update(ident, framing={**(job.get("framing") or {}), design.aspect: framing_of(design)})
-            others = [n for n, c in enumerate(clips) if n != index and same_shape(c, clips[index])] if edit.apply_all else []
+            # "Use this on all clips of this video": the whole look (framing included) goes on the other
+            # clips, and the framing is remembered so this video's next clips (live clips too) get it.
+            from .design import framing_of
+            store.update(ident, framing={**(job.get("framing") or {}), design.aspect: framing_of(design)})
+            others = [n for n, c in enumerate(clips) if n != index and same_shape(c, clips[index])]
             for done, n in enumerate(others, 1):
                 if event.is_set():
                     raise RuntimeError("Cancelled")

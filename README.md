@@ -10,6 +10,23 @@ Get the ready-to-run Windows installer from **[the latest GitHub release](https:
 
 Windows shows “Windows protected your PC”? This release is unsigned. See the [installation guide](docs/WINDOWS-HELP.md). Support: **anintellectualcompany.contact@gmail.com**.
 
+### New in 1.6
+
+Everything new is off until you use it, so your clips look the same as before.
+
+- **Layouts + Set it manually:** 11 ready layouts (Full screen, Cam on top, Cam below, Cam in a corner, Round cam, Side by side, Trio, Centred, Two halves, Top bar, Gameplay only). Open **Set it manually** to drag coloured boxes over a frame of the stream: green = gameplay, orange = streamer cam, blue = an extra part. Scroll on a box to zoom.
+- **Cards, My brand, Outro & music** (Design step and clip editor): X / Instagram / YouTube / TikTok post cards, a Breaking news frame, your social handles bar, logo, "Clip: name" credit, a background card around the video, an end card or your own outro video, and one song under the clip.
+- **Fix captions:** a **Words** tab in the clip editor to change words and timing, import SRT / VTT / ASS, download SRT / VTT. **How words move** (Light up word, Pop each word, Pop the line, One word at a time, Build up, Still line), fonts installed on your PC, and **My caption styles**.
+- **Use this on all clips of this video:** one switch in the clip editor puts the whole look on every clip of that video and on its new clips.
+- **Title for the first N seconds** (2-60 s) and **Improve heading** (hook questions from what is said).
+- **Rate your clips** with stars: after 8 rated moments MasterClip leans to what you like. **Moment mix:** Balanced / Action / Talking.
+- **Transcript:** read everything that was said, click the first and last word, make a clip of that part. **Chatbot helper:** let ChatGPT or Gemini find moments in a long video, paste the answer back.
+- **📡 Creators:** add a Twitch or YouTube streamer; when they go live MasterClip records and clips chat spikes by itself (one stream at a time, 3 h cap). YouTube live chat now counts for live clipping too.
+- **Phone remote** (under **More ▾**): off by default; a PIN page on your home Wi-Fi to start a live stream, press Clip now and download clips from your phone.
+- **🖼 Cover** picture for each clip (also sent as the thumbnail when posting), a **New version** note when an update is out (never installs by itself), **Report a problem**, and 4K shown only when the video has it.
+- The top bar is shorter: New window, Save folder, Phone remote and Help are under **More ▾**.
+- Also carries the unreleased 1.5 Campaigns below.
+
 ### New in 1.5
 
 - **💰 Campaigns:** a list of clipping campaigns that pay per views, and sites that run them. **Clip for this** fills in step 1 with the campaign's source, sets the clip length, turns captions on and shows a "Campaign" banner.
@@ -18,7 +35,7 @@ Windows shows “Windows protected your PC”? This release is unsigned. See the
 
 ### New in 1.4
 
-- **Save folder:** click **📁 Save folder** at the top and pick any folder, like `D:\MasterClip`. Finished clips and the temporary downloads both go there, so a full C: drive no longer breaks a job.
+- **Save folder:** click **📁 Save folder** (under **More ▾** since 1.6) and pick any folder, like `D:\MasterClip`. Finished clips and the temporary downloads both go there, so a full C: drive no longer breaks a job.
 - MasterClip checks for at least 2 GB free before it starts, and says so in plain words if the disk is full. Other download errors now show the real reason, which helps support.
 
 ### New in 1.1

@@ -14,6 +14,28 @@ const state = {
   poll: null,
 };
 
+/* Top bar "More ▾" menu: the less-used things (new window, save folder, phone remote, help). */
+(function moreMenu() {
+  const btn = $("#moreBtn"), pop = $("#moreMenu");
+  const show = (on) => { pop.hidden = !on; btn.setAttribute("aria-expanded", String(on)); };
+  btn.addEventListener("click", (e) => { e.stopPropagation(); show(pop.hidden); });
+  pop.addEventListener("click", (e) => { if (e.target.closest(".more-item")) show(false); });
+  document.addEventListener("click", (e) => { if (!pop.hidden && !e.target.closest(".more-menu")) show(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { show(false); btn.focus(); } });
+})();
+/* One-time "New in 1.6" note: shown until the buyer presses Got it (remembered on this PC). */
+(function whatsNew() {
+  const KEY = "mc-seen-new-1.6";
+  let seen = false;
+  try { seen = localStorage.getItem(KEY) === "1"; } catch { /* private mode: show it */ }
+  const box = $("#whatsNew");
+  if (!box || seen) return;
+  box.hidden = false;
+  $("#whatsNewX").addEventListener("click", () => {
+    box.hidden = true;
+    try { localStorage.setItem(KEY, "1"); } catch { /* ignore */ }
+  });
+})();
 $("#newWindow").addEventListener("click", async () => {
   try {
     if (window.pywebview && window.pywebview.api && window.pywebview.api.new_window) {
@@ -936,6 +958,7 @@ const storageUi = {
   paint(info) {
     this.info = info;
     $("#storageDot").hidden = !info.low;
+    $("#moreDot").hidden = !info.low; // Save folder lives in the More menu
     $("#storageNow").textContent = `Clips go to ${info.clips_folder}. ${info.free} free on the ${info.drive}.`
       + (info.low ? " That's almost full: pick another drive." : "");
   },
