@@ -119,11 +119,23 @@ class Design(BaseModel):
     template: str = Field(default="big_captions", max_length=40)
     aspect: Literal["9:16", "16:9", "1:1"] = "9:16"
     resolution: Literal[720, 1080, 2160] = 1080
-    layout: Literal["full", "stack", "corner", "split", "meme"] = "full"
+    # full = one picture, stack = cam above/below the game, corner = cam floats over the game,
+    # split = left/right halves of the stream on top of each other, meme = white top bar,
+    # side = game and cam next to each other on a blurred copy, trio = three areas stacked.
+    layout: Literal["full", "stack", "corner", "split", "meme", "side", "trio"] = "full"
     fill: Literal["blur", "bars", "zoom"] = "zoom"
     cam_roi: list[float] | None = None  # streamer cam inside the source
     cam_rect: list[float] | None = None  # where the cam goes in the output (any cam layout)
     cam_side: Literal["top", "bottom"] = "top"
+    # How a floating cam looks: white frame (as before), rounded corners, or a circle.
+    cam_shape: Literal["frame", "round", "circle"] = "frame"
+    # Third area (Trio): a part of the stream (minimap, chat, a 2nd streamer) and where it goes.
+    extra_roi: list[float] | None = None
+    extra_rect: list[float] | None = None
+    # Space the boxes don't cover shows a blurred copy of the stream instead of black.
+    bg_blur: bool = False
+    # A template that keeps its own boxes in the stream ("same spots every stream").
+    keep_boxes: bool = False
     # Remove the streamer's cam that is burned into the stream picture (it gets blurred out).
     # When the cam is shown in its own box (stack/corner) the original spot is always covered.
     hide_cam: bool = False
@@ -143,7 +155,115 @@ class Design(BaseModel):
     shout: bool = False
     sfx: bool = True
 
-    _rects = field_validator("cam_roi", "cam_rect", "game_roi", "game_rect")(_rect)
+    _rects = field_validator("cam_roi", "cam_rect", "game_roi", "game_rect", "extra_roi", "extra_rect")(_rect)
+
+
+# Everything "Set it manually" changes. "Use for all clips of this video" copies these keys.
+FRAMING_KEYS = (
+    "layout", "fill", "cam_side", "split", "focus_x", "hide_cam", "cam_shape", "bg_blur", "keep_boxes",
+    "cam_roi", "cam_rect", "game_roi", "game_rect", "extra_roi", "extra_rect",
+)
+# Boxes in the source video: they belong to one video unless the template keeps them.
+SOURCE_BOXES = ("cam_roi", "game_roi", "extra_roi")
+
+
+def corner_rect(aspect: str, corner: str = "tl", size: float = 0.42, square: bool = False):
+    """Cam box in one corner of the output. `size` = share of the frame width (9:16) or height (16:9).
+    `square` makes it square on screen (for the circle cam)."""
+    W, H = CANVAS.get(aspect, CANVAS["9:16"])
+    margin = 0.04
+    if aspect == "16:9":
+        h = size
+        w = h * H / W * (1 if square else 16 / 9)
+    else:
+        w = size
+        h = w * W / H * (1 if square else 9 / 16)
+    w, h = min(w, 1 - 2 * margin), min(h, 1 - 2 * margin)
+    mx = margin * (H / W if aspect == "16:9" else 1)
+    my = margin * (W / H if aspect != "16:9" else 1)
+    x = mx if corner in ("tl", "bl") else 1 - mx - w
+    y = my if corner in ("tl", "tr") else 1 - my - h
+    if aspect == "9:16" and corner in ("tl", "tr"):
+        y = 0.16  # under the hook title
+    elif aspect == "9:16":
+        y = 1 - 0.05 - h  # above the @name
+    return [round(v, 4) for v in (x, y, w, h)]
+
+
+# The layout chips of "Set it manually". Each one is a patch on the design; `long` is used for 16:9.
+LAYOUTS = [
+    {"id": "full", "name": "Full screen", "hint": "The gameplay fills the whole screen.",
+     "short": {"layout": "full", "fill": "zoom", "hide_cam": False, "bg_blur": False}},
+    {"id": "game_only", "name": "Gameplay only", "hint": "Full screen, with the streamer's cam blurred out.",
+     "short": {"layout": "full", "fill": "zoom", "hide_cam": True, "bg_blur": False}},
+    {"id": "centred", "name": "Centred", "hint": "The whole stream in the middle on a blurred copy of itself.",
+     "short": {"layout": "full", "fill": "blur", "hide_cam": False, "bg_blur": False}},
+    {"id": "cam_top", "name": "Cam on top", "hint": "The streamer on top, the game below. Slide to change the split.",
+     "needs_cam": True,
+     "short": {"layout": "stack", "cam_side": "top", "split": 0.4, "fill": "zoom", "bg_blur": False},
+     "long": {"layout": "corner", "cam_shape": "frame", "cam_rect": corner_rect("16:9", "tr", 0.3)}},
+    {"id": "cam_bottom", "name": "Cam below", "hint": "The game on top, the streamer below.",
+     "needs_cam": True,
+     "short": {"layout": "stack", "cam_side": "bottom", "split": 0.4, "fill": "zoom", "bg_blur": False},
+     "long": {"layout": "corner", "cam_shape": "frame", "cam_rect": corner_rect("16:9", "br", 0.3)}},
+    {"id": "pip", "name": "Cam in a corner", "hint": "The cam floats over the game. Pick a corner and a size.",
+     "needs_cam": True,
+     "short": {"layout": "corner", "cam_shape": "round", "fill": "zoom", "bg_blur": False,
+               "cam_rect": corner_rect("9:16", "tl", 0.42)},
+     "long": {"layout": "corner", "cam_shape": "round", "cam_rect": corner_rect("16:9", "tr", 0.3)}},
+    {"id": "circle", "name": "Round cam", "hint": "The streamer's face in a circle over the game.",
+     "needs_cam": True,
+     "short": {"layout": "corner", "cam_shape": "circle", "fill": "zoom", "bg_blur": False,
+               "cam_rect": corner_rect("9:16", "tl", 0.36, square=True)},
+     "long": {"layout": "corner", "cam_shape": "circle", "cam_rect": corner_rect("16:9", "tr", 0.36, square=True)}},
+    {"id": "side", "name": "Side by side", "hint": "Game and cam next to each other, blurred stream around them.",
+     "needs_cam": True,
+     "short": {"layout": "side", "bg_blur": True, "fill": "zoom", "game_rect": [0.0, 0.34, 0.62, 0.32],
+               "cam_rect": [0.62, 0.34, 0.38, 0.32]},
+     "long": {"layout": "side", "bg_blur": True, "fill": "zoom", "game_rect": [0.0, 0.0, 0.68, 1.0],
+              "cam_rect": [0.68, 0.25, 0.32, 0.5]}},
+    {"id": "trio", "name": "Trio", "hint": "Three parts stacked: cam, game, and one more part you pick (map, chat...).",
+     "needs_cam": True,
+     "short": {"layout": "trio", "fill": "zoom", "bg_blur": False, "cam_rect": [0.0, 0.0, 1.0, 0.3],
+               "game_rect": [0.0, 0.3, 1.0, 0.42], "extra_rect": [0.0, 0.72, 1.0, 0.28]},
+     "long": {"layout": "side", "bg_blur": True, "fill": "zoom", "game_rect": [0.0, 0.0, 0.68, 1.0],
+              "cam_rect": [0.68, 0.0, 0.32, 0.5], "extra_rect": [0.68, 0.5, 0.32, 0.5]}},
+    {"id": "halves", "name": "Two halves", "hint": "Left and right half of the stream, one on top of the other (2 people).",
+     "short": {"layout": "split", "fill": "zoom", "bg_blur": False}},
+    {"id": "topbar", "name": "Top bar", "hint": "A white bar on top for the hook line, the video below.",
+     "short": {"layout": "meme", "fill": "bars", "meme_bar": 0.24, "bg_blur": False}},
+]
+_RESET = {"cam_rect": None, "game_rect": None, "extra_rect": None, "hide_cam": False, "cam_shape": "frame"}
+
+
+def layout_patch(layout_id: str, aspect: str = "9:16") -> dict:
+    """The design changes a layout chip makes (output boxes reset to that layout's own spots)."""
+    item = next((x for x in LAYOUTS if x["id"] == layout_id), LAYOUTS[0])
+    patch = dict(item["long"] if aspect != "9:16" and "long" in item else item["short"])
+    if aspect != "9:16" and patch.get("layout") == "trio":
+        patch["layout"] = "side"
+    return {**_RESET, **patch}
+
+
+def apply_layout(design: "Design", layout_id: str) -> "Design":
+    return design.model_copy(update=layout_patch(layout_id, design.aspect), deep=True)
+
+
+def layout_id(design: "Design") -> str:
+    """Which chip a design matches (for the "on" chip in the editor)."""
+    layout = design.layout
+    if layout == "full":
+        return "game_only" if design.hide_cam else "centred" if design.fill == "blur" else "full"
+    if layout == "stack":
+        return "cam_top" if design.cam_side == "top" else "cam_bottom"
+    if layout == "corner":
+        return "circle" if design.cam_shape == "circle" else "pip"
+    return {"side": "trio" if design.extra_rect else "side", "trio": "trio", "split": "halves", "meme": "topbar"}[layout]
+
+
+def framing_of(design: "Design") -> dict:
+    data = design.model_dump()
+    return {k: data[k] for k in FRAMING_KEYS} | {"meme_bar": data["meme_bar"]}
 
 
 TEMPLATES = [
@@ -408,11 +528,18 @@ def effective_layout(design: Design) -> str:
     layout = design.layout
     if layout == "meme" and not design.title.show:
         return "full"  # title removed: no empty white bar on top
-    if layout in ("stack", "corner") and not design.cam_roi:
+    if layout in CAM_LAYOUTS and not design.cam_roi:
         return "full"  # no cam found or drawn yet
-    if design.aspect != "9:16" and layout in ("stack", "split"):
-        return "corner" if layout == "stack" else "full"
+    if design.aspect != "9:16" and layout in ("stack", "split", "trio"):
+        return {"stack": "corner", "split": "full", "trio": "side"}[layout]
     return layout
+
+
+CAM_LAYOUTS = ("stack", "corner", "side", "trio")
+_SIDE = {"9:16": ([0.0, 0.34, 0.62, 0.32], [0.62, 0.34, 0.38, 0.32]),
+         "16:9": ([0.0, 0.0, 0.68, 1.0], [0.68, 0.25, 0.32, 0.5]),
+         "1:1": ([0.0, 0.2, 0.62, 0.6], [0.62, 0.2, 0.38, 0.6])}
+_TRIO = ([0.0, 0.0, 1.0, 0.3], [0.0, 0.3, 1.0, 0.42], [0.0, 0.72, 1.0, 0.28])  # cam, game, extra
 
 
 def cam_output_rect(design: Design):
@@ -424,12 +551,16 @@ def cam_output_rect(design: Design):
         return [0.0, 0.0, 1.0, band] if design.cam_side == "top" else [0.0, 1 - band, 1.0, band]
     if layout == "corner":
         return design.cam_rect or [0.05, 0.05, 0.4, 0.2]
+    if layout == "side":
+        return design.cam_rect or _SIDE[design.aspect][1]
+    if layout == "trio":
+        return design.cam_rect or _TRIO[0]
     return None
 
 
 def game_area(design: Design):
     layout = effective_layout(design)
-    if layout == "full" and design.layout in ("stack", "corner"):
+    if layout == "full" and design.layout in CAM_LAYOUTS:
         return [0.0, 0.0, 1.0, 1.0]  # no streamer cam found: the gameplay fills the whole frame
     if design.game_rect and layout != "split":
         return design.game_rect
@@ -438,7 +569,26 @@ def game_area(design: Design):
         return [0.0, band, 1.0, 1 - band] if design.cam_side == "top" else [0.0, 0.0, 1.0, 1 - band]
     if layout == "meme":
         return [0.0, design.meme_bar, 1.0, 1 - design.meme_bar]
+    if layout == "side":
+        return _SIDE[design.aspect][0]
+    if layout == "trio":
+        return _TRIO[1]
     return [0.0, 0.0, 1.0, 1.0]
+
+
+def extra_area(design: Design):
+    """Where the third area goes (Trio), or None."""
+    layout = effective_layout(design)
+    if layout == "trio":
+        return design.extra_rect or _TRIO[2]
+    if layout == "side" and design.extra_rect:
+        return design.extra_rect
+    return None
+
+
+def extra_region(design: Design):
+    """The part of the stream shown in the third area: picked by the buyer, else a closer look at the middle."""
+    return design.extra_roi or [0.3, 0.3, 0.4, 0.4]
 
 
 def cam_cover(design: Design, game_px, src_w: int, src_h: int):
@@ -494,12 +644,15 @@ def adapt_to_source(design: Design, src_w: int, src_h: int) -> Design:
     if not is_portrait(src_w, src_h):
         return design
     d = design.model_copy(deep=True)
-    if d.layout in ("stack", "corner", "split"):
+    if d.layout in (*CAM_LAYOUTS, "split"):
         d.layout = "full"
     d.hide_cam = False
+    d.bg_blur = False
     d.cam_rect = None
     d.game_rect = None
     d.game_roi = None
+    d.extra_rect = None
+    d.extra_roi = None
     if d.aspect != "9:16" and d.fill == "zoom":
         d.fill = "blur"
     return d
@@ -517,7 +670,10 @@ def build_filter(design: Design, src_w: int, src_h: int, fps: int = 30):
     ax, ay, aw, ah = _px(game_area(design), W, H)
     background = "white" if layout == "meme" else "black"
     cam_rect = cam_output_rect(design)
-    streams = 2 if cam_rect else 1
+    extra_rect = extra_area(design)
+    covered = ax == 0 and ay == 0 and aw >= W and ah >= H
+    bg_blur = design.bg_blur and layout != "meme" and not covered
+    streams = 1 + bool(cam_rect) + bool(extra_rect) + bg_blur
     if layout == "split":
         streams = 2
     parts.append(f"[0:v]fps={fps},setsar=1,split={streams}" + "".join(f"[s{i}]" for i in range(streams)))
@@ -530,9 +686,36 @@ def build_filter(design: Design, src_w: int, src_h: int, fps: int = 30):
         parts.append(_fit("r0", "r1", W, H - half, "zoom", 0.5))
         parts.append("[l1][r1]vstack=inputs=2,setsar=1[base]")
         return ";".join(parts), W, H
+    return _compose(design, parts, (gx, gy, gw, gh), (ax, ay, aw, ah), W, H, src_w, src_h,
+                    background, cam_rect, extra_rect, bg_blur)
+
+
+def _mask(label, w, h, shape, inset=0):
+    """A one-frame grey mask (white = keep) for a rounded box or a circle. Overlays and alphamerge
+    repeat the last frame, so it is drawn once, not on every frame."""
+    if shape == "circle":
+        r = min(w, h) / 2 - inset
+        expr = f"255*lte(hypot(X-{w / 2 - 0.5:.1f},Y-{h / 2 - 0.5:.1f}),{r:.1f})"
+    else:
+        r = max(4, round(min(w, h) * 0.09))
+        expr = (f"255*lte(hypot(max(0,max({r}-X,X-{w - 1 - r})),max(0,max({r}-Y,Y-{h - 1 - r}))),{r})")
+    return f"color=c=black:s={w}x{h}:r=1:d=1,format=gray,geq=lum='{expr}'[{label}]"
+
+
+def _shaped(parts, src, label, w, h, shape):
+    """Cut a rounded box or a circle out of [src] (w x h) as [label] with see-through corners."""
+    parts.append(_mask(label + "m", w, h, shape))
+    parts.append(f"[{src}]format=yuva420p[{label}a];[{label}a][{label}m]alphamerge[{label}]")
+
+
+def _compose(design, parts, game_px, area_px, W, H, src_w, src_h, background, cam_rect, extra_rect, bg_blur):
+    """Game (+ blurred background) + cam (+ third area) for every layout except "split"."""
+    gx, gy, gw, gh = game_px
+    ax, ay, aw, ah = area_px
+    stream = iter(f"s{i}" for i in range(1, 4))
     parts.append(f"[s0]crop={gw}:{gh}:{gx}:{gy}[g0]")
     game = "g0"
-    cover = cam_cover(design, (gx, gy, gw, gh), src_w, src_h)
+    cover = cam_cover(design, game_px, src_w, src_h)
     if cover:
         rx, ry, rw, rh = cover
         sw, sh = max(2, rw // 24 // 2 * 2), max(2, rh // 24 // 2 * 2)
@@ -542,23 +725,63 @@ def build_filter(design: Design, src_w: int, src_h: int, fps: int = 30):
         )
         game = "g0h"
     parts.append(_fit(game, "g1", aw, ah, design.fill, design.focus_x))
-    parts.append(f"[g1]pad={W}:{H}:{ax}:{ay}:color={background}[c0]")
-    if not cam_rect:
-        parts[-1] = parts[-1].replace("[c0]", "[base]")
-        return ";".join(parts), W, H
-    cx, cy, cw, ch = _px(design.cam_roi, src_w, src_h)
-    ox, oy, ow, oh = _px(cam_rect, W, H)
-    if layout == "corner":
-        border = 6
-        iw, ih = ow - 2 * border, oh - 2 * border
+    if bg_blur:
+        bw, bh = _even(W / 8), _even(H / 8)
         parts.append(
-            f"[s1]crop={cw}:{ch}:{cx}:{cy},scale={iw}:{ih}:force_original_aspect_ratio=increase,"
-            f"crop={iw}:{ih},pad={ow}:{oh}:{border}:{border}:color=white,setsar=1[cam]"
+            f"[{next(stream)}]scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh},"
+            f"boxblur=4:2,eq=brightness=-0.08,scale={W}:{H},setsar=1[bg0]"
         )
+        parts.append(f"[bg0][g1]overlay={ax}:{ay}[c0]")
     else:
+        parts.append(f"[g1]pad={W}:{H}:{ax}:{ay}:color={background}[c0]")
+    last = "c0"
+    if cam_rect:
+        cam_src = next(stream)
+        cx, cy, cw, ch = _px(design.cam_roi, src_w, src_h)
+        ox, oy, ow, oh = _px(cam_rect, W, H)
+        floating = effective_layout(design) == "corner"
+        shape = design.cam_shape if floating else "box"
+        if shape == "frame":
+            border = 6
+            iw, ih = ow - 2 * border, oh - 2 * border
+            parts.append(
+                f"[{cam_src}]crop={cw}:{ch}:{cx}:{cy},scale={iw}:{ih}:force_original_aspect_ratio=increase,"
+                f"crop={iw}:{ih},pad={ow}:{oh}:{border}:{border}:color=white,setsar=1[cam]"
+            )
+        elif shape == "circle":
+            d = min(ow, oh) // 2 * 2
+            ring = max(4, _even(d * 0.025))
+            inner = d - 2 * ring
+            ox, oy = ox + (ow - d) // 2 // 2 * 2, oy + (oh - d) // 2 // 2 * 2
+            parts.append(
+                f"[{cam_src}]crop={cw}:{ch}:{cx}:{cy},scale={inner}:{inner}:force_original_aspect_ratio=increase,"
+                f"crop={inner}:{inner},setsar=1[camr]"
+            )
+            _shaped(parts, "camr", "cam", inner, inner, "circle")
+            parts.append(f"color=c=white:s={d}x{d}:r=1:d=1,format=yuva420p[ringw]")
+            parts.append(_mask("ringm", d, d, "circle"))
+            parts.append("[ringw][ringm]alphamerge[ring]")
+            parts.append(f"[{last}][ring]overlay={ox}:{oy}[c0r]")
+            last, ox, oy = "c0r", ox + ring, oy + ring
+        else:
+            parts.append(
+                f"[{cam_src}]crop={cw}:{ch}:{cx}:{cy},scale={ow}:{oh}:force_original_aspect_ratio=increase,"
+                f"crop={ow}:{oh},setsar=1[camr]"
+            )
+            if shape == "round":
+                _shaped(parts, "camr", "cam", ow, oh, "round")
+            else:
+                parts[-1] = parts[-1].replace("[camr]", "[cam]")
+        parts.append(f"[{last}][cam]overlay={ox}:{oy}[c1]")
+        last = "c1"
+    if extra_rect:
+        ex, ey, ew, eh = _px(extra_region(design), src_w, src_h)
+        px, py, pw, ph = _px(extra_rect, W, H)
         parts.append(
-            f"[s1]crop={cw}:{ch}:{cx}:{cy},scale={ow}:{oh}:force_original_aspect_ratio=increase,"
-            f"crop={ow}:{oh},setsar=1[cam]"
+            f"[{next(stream)}]crop={ew}:{eh}:{ex}:{ey},scale={pw}:{ph}:force_original_aspect_ratio=increase,"
+            f"crop={pw}:{ph},setsar=1[xtra]"
         )
-    parts.append(f"[c0][cam]overlay={ox}:{oy}[base]")
+        parts.append(f"[{last}][xtra]overlay={px}:{py}[c2]")
+        last = "c2"
+    parts[-1] = parts[-1][: -len(f"[{last}]")] + "[base]"
     return ";".join(parts), W, H

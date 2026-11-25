@@ -136,6 +136,8 @@ class ClipEdit(BaseModel):
     end: float = Field(gt=0, allow_inf_nan=False)
     title: str = Field(default="", max_length=140)
     design: dict
+    # "Use for all clips of this video": this clip's framing goes on every clip of the same shape.
+    framing_all: bool = False
 
 
 class ProjectRequest(SourceRequest):
@@ -550,10 +552,13 @@ def file_output(ident, path, kind):
 
 def job_design(job, template, overrides=None):
     """Template + the buyer's tweaks + what we learned from the video."""
-    from .design import template_design
+    from .design import TEMPLATES, Design, template_design
 
     extra = dict(overrides or {})
-    if not extra.get("cam_roi"):
+    mine = my_templates.all()
+    base = (next((t for t in [*TEMPLATES, *mine] if t["id"] == template), {}) or {}).get("design") or {}
+    keeps = extra.get("keep_boxes", base.get("keep_boxes")) and (extra.get("cam_roi") or base.get("cam_roi"))
+    if not extra.get("cam_roi") and not keeps:
         extra["cam_roi"] = job.get("cam_roi")  # found in this video; the home screen can't know it
     if not extra.get("credit"):
         extra["credit"] = job.get("channel") or ""
@@ -561,7 +566,11 @@ def job_design(job, template, overrides=None):
     extra["resolution"] = recipe.get("resolution") or 1080
     if recipe.get("aspect") and "aspect" not in extra and not recipe.get("formats"):
         extra["aspect"] = recipe["aspect"]
-    return template_design(template, my_templates.all(), **extra)
+    design = template_design(template, mine, **extra)
+    framing = (job.get("framing") or {}).get(design.aspect)
+    if framing:  # "Use for all clips of this video" from the clip editor
+        design = Design(**{**design.model_dump(), **framing})
+    return design
 
 
 def job_designs(job, captions=True):
@@ -720,7 +729,7 @@ def rerender_clip(ident, index, edit: ClipEdit):
             url=f"/api/jobs/{ident}/files/{name}",
         )
         store.update(
-            ident, status="complete", progress=1, clips=clips,
+            ident, status="rendering" if edit.framing_all else "complete", progress=1, clips=clips,
             outputs=[file_output(ident, folder / x["file"], "clip") for x in clips],
             message=f"Clip {index + 1} updated",
         )
@@ -728,11 +737,48 @@ def rerender_clip(ident, index, edit: ClipEdit):
             old.unlink(missing_ok=True)
         except OSError:
             pass
+        if edit.framing_all:
+            _framing_to_all(ident, index, design, transcript, event)
     except Exception as exc:
         store.update(
             ident, status="cancelled" if event.is_set() else "complete",
             error=str(exc)[:1000], message="That change didn't work. Try again.",
         )
+
+
+def _framing_to_all(ident, index, design, transcript, event):
+    """Put one clip's framing (layout + boxes) on every other clip of the same shape, and remember it
+    for this video's next clips (live clips too)."""
+    from .design import Design, framing_of
+    from .render import render_clip
+
+    folder = store.folder(ident)
+    job = store.get(ident)
+    framing = framing_of(design)
+    store.update(ident, framing={**(job.get("framing") or {}), design.aspect: framing})
+    clips = job["clips"]
+    others = [n for n, c in enumerate(clips)
+              if n != index and (c.get("design") or {}).get("aspect", "9:16") == design.aspect]
+    for step, n in enumerate(others):
+        if event.is_set():
+            raise RuntimeError("Cancelled")
+        clip = clips[n]
+        progress(ident, "rendering", (step + 1) / (len(others) + 1), f"Same framing on clip {n + 1}")
+        new = Design(**{**(clip.get("design") or {}), **framing})
+        segments, _ = _clip_words(transcript, clip["start"], clip["end"])
+        version = int(clip.get("version", 0)) + 1
+        name = f"clip-{job.get('export_revision', 1):02}-{n + 1:02}-v{version}.mp4"
+        render_clip(job["source_path"], clip["start"], clip["end"], folder / name, new,
+                    segments, clip.get("title") or "", cancel_event=event)
+        old = folder / clip["file"]
+        clip.update(design=new.model_dump(), file=name, version=version, url=f"/api/jobs/{ident}/files/{name}")
+        store.update(ident, clips=clips, outputs=[file_output(ident, folder / x["file"], "clip") for x in clips])
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass
+    store.update(ident, status="complete", progress=1,
+                 message=f"Same framing on {len(others) + 1} clips" if others else f"Clip {index + 1} updated")
 
 
 def export(ident, options):
@@ -1328,11 +1374,11 @@ def open_output():
 
 @app.get("/api/templates")
 def list_templates():
-    from .design import FONTS, TEMPLATES, Design
+    from .design import FONTS, LAYOUTS, TEMPLATES, Design
     from .emoji import emoji_table
 
     return dict(templates=[*TEMPLATES, *my_templates.all()], fonts=list(FONTS), font_files=FONTS,
-                defaults=Design().model_dump(), emoji=emoji_table())
+                defaults=Design().model_dump(), emoji=emoji_table(), layouts=LAYOUTS)
 
 
 class MyTemplateRequest(BaseModel):
@@ -1440,7 +1486,9 @@ def restyle(ident, body: RestyleRequest):
             except ValueError as exc:
                 raise HTTPException(400, f"Check the design: {_friendly(exc)}")
         events[ident] = threading.Event()
-        store.update(ident, status="rendering", progress=0.01, error=None, message="Restyling your clips")
+        # A new design for the whole video replaces "Use for all clips" framing from the clip editor.
+        store.update(ident, status="rendering", progress=0.01, error=None, message="Restyling your clips",
+                     framing=None)
         pool.submit(restyle_clips, ident, formats)
         return store.get(ident)
 

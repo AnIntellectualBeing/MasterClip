@@ -7,7 +7,7 @@ import threading
 import uuid
 from pathlib import Path
 
-from .design import Design
+from .design import CAM_LAYOUTS, Design
 
 MAX_TEMPLATES = 60
 
@@ -36,8 +36,9 @@ class MyTemplates:
         if not name:
             raise ValueError("Give your template a name.")
         checked = Design(**design).model_dump()
-        # Things that belong to one video, not to a template.
-        for key in ("cam_roi", "game_roi", "credit"):
+        # Things that belong to one video, not to a template ("Same spots in every video" keeps the boxes).
+        drop = ("credit",) if checked.get("keep_boxes") and checked.get("cam_roi") else ("cam_roi", "game_roi", "extra_roi", "credit")
+        for key in drop:
             checked.pop(key, None)
         checked["title"].pop("text", None)
         kind = "long" if checked["aspect"] == "16:9" else "short"
@@ -52,7 +53,7 @@ class MyTemplates:
             item = {
                 "id": "my-" + uuid.uuid4().hex[:10], "kind": kind, "name": name, "mine": True,
                 "blurb": "Your template", "base": str(base or "")[:40], "length": int(length or 30),
-                "needs_cam": checked["layout"] in ("stack", "corner"), "design": checked,
+                "needs_cam": checked["layout"] in CAM_LAYOUTS, "design": checked,
             }
             checked["template"] = item["id"]
             items.append(item)
@@ -70,7 +71,7 @@ class MyTemplates:
                                                       design if design is not None else item["design"], "")
                 checked["template"] = ident
                 item.update(name=new_name, design=checked, kind=kind,
-                            needs_cam=checked["layout"] in ("stack", "corner"))
+                            needs_cam=checked["layout"] in CAM_LAYOUTS)
             self._write(items)
             return item
 

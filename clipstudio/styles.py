@@ -189,9 +189,9 @@ def rounded_rect(x0: float, y0: float, x1: float, y1: float, r: float) -> str:
 
 
 def _title_over_face(design: Design) -> bool:
-    from .design import cam_output_rect, effective_layout
+    from .design import CAM_LAYOUTS, cam_output_rect, effective_layout
 
-    if design.aspect == "16:9" or effective_layout(design) not in ("stack", "corner"):
+    if design.aspect == "16:9" or effective_layout(design) not in CAM_LAYOUTS:
         return False
     try:
         rect = cam_output_rect(design)
