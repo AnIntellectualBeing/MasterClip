@@ -119,12 +119,12 @@ class Zernio:
         return url
 
     # --- posting ---
-    def upload(self, path: Path) -> str:
+    def upload(self, path: Path, content_type: str = "video/mp4") -> str:
         size = os.path.getsize(path)
-        presign = self._call("POST", "/media/presign", json={"filename": path.name, "contentType": "video/mp4", "size": size})
+        presign = self._call("POST", "/media/presign", json={"filename": path.name, "contentType": content_type, "size": size})
         try:
             with open(path, "rb") as handle:
-                put = requests.put(presign["uploadUrl"], data=handle, headers={"Content-Type": "video/mp4"}, timeout=900)
+                put = requests.put(presign["uploadUrl"], data=handle, headers={"Content-Type": content_type}, timeout=900)
         except (KeyError, requests.RequestException) as error:
             raise ZernioError("The video upload didn't finish. Retrying automatically.", retry_after=60) from error
         if put.status_code >= 400:
@@ -133,7 +133,8 @@ class Zernio:
         return presign["publicUrl"]
 
     def create_post(self, *, video_url: str, caption: str, title: str, accounts: dict[str, str],
-                    when: str | None, timezone: str, idempotency_key: str | None = None, short: bool = False) -> dict:
+                    when: str | None, timezone: str, idempotency_key: str | None = None, short: bool = False,
+                    thumbnail: str | None = None) -> dict:
         platforms = []
         for platform, account_id in accounts.items():
             entry = {"platform": platform, "accountId": account_id, "customContent": caption}
@@ -150,7 +151,10 @@ class Zernio:
             else:
                 entry["customContent"] = caption[:2200]
             platforms.append(entry)
-        body = {"content": caption[:2200], "mediaItems": [{"url": video_url, "type": "video"}], "platforms": platforms, "timezone": timezone}
+        media = {"url": video_url, "type": "video"}
+        if thumbnail:
+            media["thumbnail"] = thumbnail  # cover image; Zernio applies it where the platform allows
+        body = {"content": caption[:2200], "mediaItems": [media], "platforms": platforms, "timezone": timezone}
         if when:
             body["scheduledFor"] = when
         else:

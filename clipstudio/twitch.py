@@ -168,6 +168,20 @@ def search(topic: str, cancel_event=None) -> dict:
     return {"live": live, "vod": vods}
 
 
+LIVE_QUERY = """query($logins:[String!]){ users(logins:$logins){ login stream{ id } } }"""
+
+
+def live_logins(logins: list[str], gql=None) -> set[str]:
+    """Which of these Twitch channels are live right now (one request for up to 50 names).
+    Only the channel names are sent."""
+    names = [n.lower() for n in logins if isinstance(n, str) and _LOGIN_RE.fullmatch(n)][:50]
+    if not names:
+        return set()
+    data = (gql or _gql)(LIVE_QUERY, {"logins": names})
+    return {str(u["login"]).lower() for u in data.get("users") or []
+            if isinstance(u, dict) and u.get("login") and isinstance(u.get("stream"), dict)}
+
+
 CHAT_QUERY = """query($id:ID!,$off:Int){ video(id:$id){
  comments(contentOffsetSeconds:$off){ edges{ node{ id contentOffsetSeconds
   message{ fragments{ text } } } } pageInfo{ hasNextPage } } } }"""

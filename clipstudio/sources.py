@@ -470,7 +470,27 @@ def inspect_url(url, folder, cancel_event=None) -> dict:
         "chapters": chapters,
         "suggested": {"start": start, "end": end, "reason": why},
         "site": site_name(extractor),
+        "max_height": max_height(metadata),
     }
+
+
+def max_height(metadata) -> int | None:
+    """Tallest video rendition the link offers (2160 = 4K), or None when the site doesn't say."""
+    best = 0
+    for fmt in (metadata or {}).get("formats") or []:
+        if not isinstance(fmt, dict) or fmt.get("vcodec") == "none":
+            continue
+        try:
+            w, h = int(fmt.get("width") or 0), int(fmt.get("height") or 0)
+        except (TypeError, ValueError):
+            continue
+        best = max(best, min(w, h) if w and h else h)  # a vertical 2160x3840 video counts as 4K too
+    if not best:
+        try:
+            best = int(metadata.get("height") or 0)
+        except (TypeError, ValueError, AttributeError):
+            best = 0
+    return best or None
 
 
 def site_name(extractor: str) -> str:

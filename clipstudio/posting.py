@@ -409,6 +409,13 @@ class Poster:
                     target = self.folder / f"{ident}.mp4"
                     shutil.copy2(clip["file"], target)
                     _still(target, self.folder / f"{ident}.jpg")
+                    cover = None
+                    if clip.get("cover") and Path(clip["cover"]).is_file():
+                        try:
+                            shutil.copy2(clip["cover"], self.folder / f"{ident}-cover.jpg")
+                            cover = f"{ident}-cover.jpg"
+                        except OSError:
+                            cover = None
                     item = {
                     "id": ident, "job_id": clip.get("job_id"), "index": clip.get("index"),
                     "file": target.name, "title": clip.get("title") or "Clip",
@@ -420,7 +427,8 @@ class Poster:
                     # a time the buyer picked is never moved to a daily slot (late = post right away)
                     "pinned": when in ("at", "now"),
                     "slot": slot,
-                    "dm": "waiting" if s["dm"]["on"] and platform == "instagram" and slot == 1 else "off",
+                    "cover": cover,
+                    "dm":"waiting" if s["dm"]["on"] and platform == "instagram" and slot == 1 else "off",
                     "key": str(uuid.uuid4()),
                     "created": dt.datetime.now().isoformat(timespec="seconds"),
                     }
@@ -463,6 +471,7 @@ class Poster:
             items = [i for i in self.queue() if i["id"] != ident]
             (self.folder / f"{ident}.mp4").unlink(missing_ok=True)
             (self.folder / f"{ident}.jpg").unlink(missing_ok=True)
+            (self.folder / f"{ident}-cover.jpg").unlink(missing_ok=True)
             self._save_queue(items)
 
     def retry(self, ident: str):
@@ -576,9 +585,13 @@ class Poster:
             if item.get("post_id"):
                 post = client.retry(item["post_id"])
             else:
+                extra = {}
+                thumb = self._cover_url(client, item)
+                if thumb:
+                    extra["thumbnail"] = thumb
                 post = client.create_post(video_url=url, caption=item["caption"], title=item["title"], accounts=accounts,
                                       when=f"{when}:00" if when else None, timezone=s["timezone"], idempotency_key=item["key"],
-                                      short=item.get("kind") != "long" and is_short(self.folder / item["file"]))
+                                      short=item.get("kind") != "long" and is_short(self.folder / item["file"]), **extra)
         except (ZernioError, OSError) as error:
             if (getattr(error, "retry_after", None) or getattr(error, "status_code", None) == 429
                     or any(t in str(error).lower() for t in ("quota", "upload limit", "uploadlimit", "daily limit"))
@@ -599,6 +612,20 @@ class Poster:
             return
         if item.get("dm") == "waiting" and slot == 1 and accounts.get("instagram") and post.get("_id"):
             self._set_dm(item, post_id=post["_id"])
+
+    def _cover_url(self, client, item: dict) -> str | None:
+        """Upload the clip's cover image once (best effort: no cover = the platform picks a frame)."""
+        if item.get("cover_url"):
+            return item["cover_url"]
+        path = self.folder / str(item.get("cover") or "-")
+        if not item.get("cover") or not path.is_file():
+            return None
+        try:
+            url = client.upload(path, "image/jpeg")
+        except Exception:  # noqa: BLE001 - never block the video over its cover
+            return None
+        self._update(item["id"], cover_url=url)
+        return url
 
     def _apply_post(self, item: dict, post: dict):
         status = post.get("status") or "scheduled"
