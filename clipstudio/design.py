@@ -173,7 +173,7 @@ class CardStyle(BaseModel):
     ticker: str = Field(default="", max_length=200)
     size: float = Field(default=0.86, ge=0.35, le=1.0)  # card width as a share of the frame's short side
     x: float = Field(default=0.5, ge=0, le=1)
-    y: float = Field(default=0.5, ge=0, le=1)
+    y: float = Field(default=0.4, ge=0, le=1)
     seconds: float = Field(default=0.0, ge=0, le=600)   # 0 = whole clip
 
     _asset = field_validator("avatar")(_asset)
@@ -191,7 +191,7 @@ class BrandStyle(BaseModel):
     handles_y: float = Field(default=0.9, ge=0, le=1)
     handles_size: int = Field(default=34, ge=16, le=90)
     logo: str = ""
-    logo_corner: Literal["tl", "tr", "bl", "br"] = "tr"
+    logo_corner: Literal["tl", "tr", "bl", "br"] = "br"
     logo_size: float = Field(default=0.16, ge=0.05, le=0.5)
     logo_opacity: float = Field(default=0.85, ge=0.1, le=1)
     frame: Literal["none", "blur", "color", "gradient", "image"] = "none"

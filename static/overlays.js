@@ -272,7 +272,7 @@
         const choose = () => {
           host.update((x) => {
             x.card.kind = c.id;
-            if (c.id === "tiktok_hook" && x.card.y === 0.5) x.card.y = 0.3; // a hook reads best up top
+            if (c.id === "tiktok_hook" && x.card.y === 0.4) x.card.y = 0.3; // a hook reads best up top
           });
         };
         tile.addEventListener("click", choose);

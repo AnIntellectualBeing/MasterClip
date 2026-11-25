@@ -644,7 +644,7 @@
       if (b.logo) {
         const src = `/api/brand-assets/${b.logo}`;
         if (logo.getAttribute("src") !== src) logo.src = src;
-        const m = 0.035 * side, w = b.logo_size * side, corner = b.logo_corner || "tr";
+        const m = 0.035 * side, w = b.logo_size * side, corner = b.logo_corner || "br";
         Object.assign(logo.style, {
           width: (w / W) * 100 + "%", opacity: b.logo_opacity,
           left: corner.includes("l") ? (m / W) * 100 + "%" : "", right: corner.includes("r") ? (m / W) * 100 + "%" : "",
