@@ -488,7 +488,9 @@ def _file(path: Path) -> bool:
     try:
         return path.is_file()
     except OSError:
-        return False
+        # WinError 448 ('untrusted mount point') on junction folders: pathlib's check can refuse
+        # while the raw OS check still answers, and that answer is the true one.
+        return os.path.isfile(path)
 
 
 def find_app(name: str) -> str | None:
