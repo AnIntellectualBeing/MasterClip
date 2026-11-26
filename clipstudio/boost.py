@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,12 @@ KEY_NAME = "anthropic_api_key"
 GEMINI_KEY_NAME = "gemini_api_key"
 MODEL = "claude-opus-5-5"
 GEMINI_MODEL = "gemini-flash-latest"
+# Google retires model ids for newly made keys and flash ids answer 503 when busy, so the Gemini key
+# calls walk this list: newest general flash first, then older ones that still accept new keys.
+GEMINI_MODELS = (GEMINI_MODEL, "gemini-3.8-flash", "gemini-3.6-flash", "gemini-flash-lite-latest", "gemini-2.5-flash")
+GEMINI_TRY_SECONDS = 60  # one busy model must not use up the whole wait
+GEMINI_TOTAL_SECONDS = 150
+GEMINI_KEYS_URL = "aistudio.google.com/apikey"
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -67,6 +74,8 @@ SYSTEM = (
     "no quotation marks around the whole title, no clickbait words like INSANE or CRAZY in capitals. "
     "Keep swearing out of titles. Return every id you were given."
 )
+# Gemini has no schema to lean on here, so spell the shape out; parse_picks takes a bare list too.
+SHAPE = 'Answer with only this JSON and nothing else: {"moments": [{"id": "m1", "score": 8, "title": "short funny title"}]}'
 
 
 class BoostError(RuntimeError):
@@ -98,20 +107,40 @@ def build_prompt(moments: list[dict], streamer: str = "", topic: str = "") -> st
     return "\n".join(lines)
 
 
+def _json_block(text: str) -> str:
+    """The outer {...} or [...] in a chatty answer, whichever comes first."""
+    starts = [i for i in (text.find("{"), text.find("[")) if i >= 0]
+    if not starts:
+        return ""
+    start = min(starts)
+    end = text.rfind("]" if text[start] == "[" else "}")
+    return text[start : end + 1] if end > start else ""
+
+
 def parse_picks(data, ids: set[str]) -> list[Pick]:
     if isinstance(data, str):
-        start, end = data.find("{"), data.rfind("}")
-        if start < 0 or end <= start:
+        # Gemini answers a bare [ ... ] list even when asked for {"moments": [...]}; small local
+        # models add chat around it. Try the whole text, then the outer block.
+        for attempt in (data.strip(), _json_block(data)):
+            if not attempt:
+                continue
+            try:
+                data = json.loads(attempt)
+                break
+            except ValueError:
+                continue
+        else:
             raise BoostError("The AI didn't send back a list of moments.")
-        try:
-            data = json.loads(data[start : end + 1])
-        except ValueError as error:
-            raise BoostError("The AI's answer wasn't readable.") from error
     picks = []
-    rows = data.get("moments") if isinstance(data, dict) else data
-    if isinstance(data, dict) and not isinstance(rows, list):
+    if isinstance(data, dict) and ("id" in data or "title" in data):
+        rows = [data]  # one moment, sent on its own
+    elif isinstance(data, dict) and isinstance(data.get("moments"), list):
+        rows = data["moments"]
+    elif isinstance(data, dict):
         # small local models answer {"m1": {"score": 8, "title": ...}, ...}
-        rows = [dict(v, id=k) for k, v in data.items() if isinstance(v, dict)]
+        rows = [dict(v, id=v.get("id") or k) for k, v in data.items() if isinstance(v, dict)]
+    else:
+        rows = data
     for row in rows or []:
         if not isinstance(row, dict):
             continue
@@ -233,31 +262,92 @@ def _ask_gemini_cli(prompt: str, timeout: int = 300) -> object:
     return envelope
 
 
+def check_gemini_key(key: str | None) -> str:
+    """Only a rough shape check: Google's own API is the authority on a key.
+
+    Google now hands out two shapes and both work the same way: the classic “AIza…” keys, and the
+    newer “AQ.Ab8…” keys that aistudio.google.com/app/apikey starts giving out. Earlier builds only
+    accepted “AIza…”, so real new keys were refused before we ever called Google. Anything that is
+    one long token of key characters is let through, so the next Google format won't need a fix.
+    """
+    key = (key or "").strip().strip('"').strip("'").strip()
+    if key.startswith("sk-ant-"):
+        raise BoostError(f"That's a Claude API key. Pick “Claude key” for it, or copy the Gemini key from {GEMINI_KEYS_URL}.")
+    if len(key) < 20 or any(c.isspace() for c in key):
+        raise BoostError(f"That doesn't look like a Gemini API key. Copy the whole key from {GEMINI_KEYS_URL} "
+                         "(it starts with AIza or AQ).")
+    return key
+
+
+class _GeminiKeyRejected(BoostError):
+    """Google refused the key itself, not the request: the other auth header is worth one try."""
+
+
+def _gemini_auth_tries(key: str) -> list[dict]:
+    """The two auth headers Google documents, most likely one first — and never a URL “?key=”.
+
+    Classic “AIza…” API keys ride in the “x-goog-api-key” header; the newer “AQ…” authorization keys
+    are bearer tokens. Whichever shape the key is gets its natural header first, and the other header
+    is tried once if Google still says no, so both authentication flows work however Google wires a
+    given key up. Keys stay out of URLs (“?key=” leaks into logs and history) and are never printed.
+    """
+    api_key = {"x-goog-api-key": key}
+    bearer = {"Authorization": f"Bearer {key}"}
+    return [api_key, bearer] if key.startswith("AIza") else [bearer, api_key]
+
+
 def _ask_gemini_api(prompt: str, key: str, session=None) -> object:
     import requests
 
     session = session or requests
     body = {
-        "systemInstruction": {"parts": [{"text": SYSTEM}]},
+        "systemInstruction": {"parts": [{"text": SYSTEM + " " + SHAPE}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json"},
     }
-    try:
-        reply = session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
-                             headers={"x-goog-api-key": key}, json=body, timeout=120)
-    except requests.RequestException as error:
-        raise BoostError("Couldn't reach Gemini. Check your internet.") from error
-    if reply.status_code in (401, 403) or (reply.status_code == 400 and "API key" in reply.text):
-        raise BoostError("Gemini didn't accept that API key.")
-    if reply.status_code == 429:
-        raise BoostError("Gemini says slow down (free limit reached). The normal picker was used.")
-    if reply.status_code >= 400:
-        raise BoostError(f"Gemini had a problem ({reply.status_code}). The normal picker was used.")
-    try:
-        parts = reply.json()["candidates"][0]["content"]["parts"]
-        return "".join(p.get("text", "") for p in parts)
-    except (ValueError, KeyError, IndexError, TypeError) as error:
-        raise BoostError("Gemini's answer was empty. The normal picker was used.") from error
+    tries = _gemini_auth_tries(key)
+    for count, headers in enumerate(tries):
+        try:
+            return _ask_gemini_models(body, headers, session)
+        except _GeminiKeyRejected as error:
+            if count == len(tries) - 1:  # both headers refused: it really is the key
+                raise BoostError(f"Gemini didn't accept that key — it may have expired or been copied short. "
+                                 f"Copy the whole key again from {GEMINI_KEYS_URL}.") from error
+    raise AssertionError("unreachable")
+
+
+def _ask_gemini_models(body: dict, headers: dict, session) -> object:
+    import requests
+
+    failed = ""
+    deadline = time.monotonic() + GEMINI_TOTAL_SECONDS
+    for model in GEMINI_MODELS:
+        wait = min(GEMINI_TRY_SECONDS, deadline - time.monotonic())
+        if wait < 5:
+            break
+        try:
+            reply = session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                 headers=headers, json=body, timeout=wait)
+        except requests.Timeout:
+            failed = "timed out"  # this model is queueing: a lighter one is worth a try
+            continue
+        except requests.RequestException as error:
+            raise BoostError("Couldn't reach Gemini. Check your internet.") from error
+        if reply.status_code in (401, 403) or (reply.status_code == 400 and "API key" in reply.text):
+            raise _GeminiKeyRejected(f"Gemini didn't accept that key. Copy it again from {GEMINI_KEYS_URL}.")
+        if reply.status_code == 429:
+            raise BoostError("Gemini says slow down (free limit reached). The normal picker was used.")
+        if reply.status_code >= 400:  # retired id (404) or a busy model (503): the next one usually answers
+            failed = str(reply.status_code)
+            continue
+        try:
+            parts = reply.json()["candidates"][0]["content"]["parts"]
+            return "".join(p.get("text", "") for p in parts)
+        except (ValueError, KeyError, IndexError, TypeError) as error:
+            raise BoostError("Gemini's answer was empty. The normal picker was used.") from error
+    if failed == "timed out" or not failed:
+        raise BoostError("Gemini is queueing right now and took too long. The normal picker was used.")
+    raise BoostError(f"Gemini had a problem ({failed}). The normal picker was used.")
 
 
 LOCAL_MODEL = "qwen2.5:3b"  # ~2 GB, good at short JSON answers, runs on most PCs
@@ -398,7 +488,9 @@ def _file(path: Path) -> bool:
     try:
         return path.is_file()
     except OSError:
-        return False
+        # WinError 448 ('untrusted mount point') on junction folders: pathlib's check can refuse
+        # while the raw OS check still answers, and that answer is the true one.
+        return os.path.isfile(path)
 
 
 def find_app(name: str) -> str | None:
@@ -534,9 +626,7 @@ class Booster:
         if key:
             key = key.strip()
             if mode == "gemini_api":
-                if not key.startswith("AIza") or len(key) < 30:
-                    raise BoostError("That doesn't look like a Gemini API key (it starts with AIza).")
-                vault.put(GEMINI_KEY_NAME, key)
+                vault.put(GEMINI_KEY_NAME, check_gemini_key(key))
             else:
                 if not key.startswith("sk-ant-") or len(key) < 30:
                     raise BoostError("That doesn't look like a Claude API key (it starts with sk-ant-).")
