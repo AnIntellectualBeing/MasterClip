@@ -8,7 +8,7 @@
   const APPS = { claude: "claude", codex: "codex", gemini: "gemini", local: "local" };
   const KEYS = {
     api: { has: "has_key", hint: "key_hint", placeholder: "sk-ant-… (from console.anthropic.com)", name: "Claude" },
-    gemini_api: { has: "has_gemini_key", hint: "gemini_hint", placeholder: "AIza… (free from aistudio.google.com)", name: "Gemini" },
+    gemini_api: { has: "has_gemini_key", hint: "gemini_hint", placeholder: "AIza… or AQ… (free from aistudio.google.com/app/apikey)", name: "Gemini" },
   };
   const INSTALL = {
     claude: "Claude wasn't found automatically. Install Claude Code and sign in once, or paste where it is below.",
@@ -42,7 +42,7 @@
       gemini: "Uses the Gemini CLI on this PC (free with a Google account). Only what was said is sent, never the video.",
       local: "Uses Ollama on this PC: free, private, no key, nothing leaves your PC. Fast with a graphics card. Get it at ollama.com, then run: ollama pull llama3.2",
       api: s.has_key ? `Uses your Claude API key (ending ${s.key_hint}). Each video costs a few cents.` : "Paste your Claude API key.",
-      gemini_api: s.has_gemini_key ? `Uses your Gemini API key (ending ${s.gemini_hint}). Google's free tier covers normal use.` : "Paste your Gemini API key (free at aistudio.google.com).",
+      gemini_api: s.has_gemini_key ? `Uses your Gemini API key (ending ${s.gemini_hint}). Google's free tier covers normal use.` : "Paste your Gemini API key (free at aistudio.google.com/app/apikey: it starts with AIza or AQ).",
     }[shown];
     const state = $("#aiState");
     state.textContent = note || text;

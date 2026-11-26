@@ -67,6 +67,8 @@ Keep the PC and at least one MasterClip window running for recording, rendering 
   Turn on **Auto-post every clip** on the first screen, choose clips per hour or daily times, and new clips go out by themselves.
 - **Optional AI boost:** better picks and titles with Claude, Codex, Gemini (free) or **Local AI with Ollama** (free,
   private, fast on a graphics card). Speech runs on an NVIDIA GPU automatically when one is available.
+  For “Gemini key”, paste a key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — both Google key
+  formats work: the classic `AIza…` API keys and the newer `AQ…` authorization keys. Keys never go into a URL.
 - **Your keys stay yours:** keys are stored in Windows Credential Manager, never in files, never sent to us.
 
 ## Run from source
